@@ -224,8 +224,8 @@ button[data-baseweb="tab"] p{font-weight:700;letter-spacing:.04em;font-size:1rem
 st.set_page_config(page_title="scoregasm", page_icon="🔥", initial_sidebar_state="collapsed")
 st.markdown(CSS, unsafe_allow_html=True)
 st.markdown('<div class="logo">SCOREGASM</div><div class="tag">the odds of the perfect tie</div>', unsafe_allow_html=True)
-st.markdown('<div class="blurb"><div class="hd">WHAT THE HELL IS A SCOREGASM</div>'
-            'Two teams. One number. <b>69–69.</b> Not 70, not 68.</div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;color:#a79fc9;font-size:1rem;letter-spacing:.04em;margin:2px 0 18px">'
+            'Two teams. One number. <b style="color:#fff">69–69.</b> Not 70, not 68.</div>', unsafe_allow_html=True)
 target = 69   # Scoregasm is about one number
 st.markdown('<div class="small" style="margin:2px 0 6px">CHANCE A GAME IS EVER TIED AT EXACTLY 69–69</div>', unsafe_allow_html=True)
 
