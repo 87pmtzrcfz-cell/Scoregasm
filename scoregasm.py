@@ -90,7 +90,12 @@ def meter(p, a, b, target):
     return int(round(chubb(p) * closeness(a, b, target)))
 
 
-TIERS = [(80, "SCOREGASM", "🎆"), (60, "CLOSE", "🔥"), (40, "HALF CHUB", "🌶️"), (20, "EYES ON IT", "👀"), (0, "LIMP", "🥀")]
+TIERS = [(80, "SCOREGASM", "🎆"), (60, "CLOSE", "🔥"), (40, "HALF CHUB", "🌭"), (20, "EYES ON IT", "👀"), (0, "LIMP", "🥀")]
+
+
+TAGLINES = {"SCOREGASM": "IT'S HAPPENING.", "CLOSE": "Just keep it going.",
+            "HALF CHUB": "Hot dog's on the grill. Not ready yet.", "EYES ON IT": "Sheesh.",
+            "LIMP": "Flatter than day-old soda. Go touch grass."}
 
 
 def tier(score):
@@ -210,16 +215,19 @@ button[data-baseweb="tab"] p{font-weight:700;letter-spacing:.04em;font-size:1rem
 .spg{font-family:'Bebas Neue',sans-serif;font-size:1.55rem;letter-spacing:.04em;color:#fff;margin-top:2px}
 .spb{font-size:1.1rem;letter-spacing:.2em;margin:2px 0}
 .sph{color:#cfc8ee;font-size:.9rem;line-height:1.45;margin:4px 0 6px}
+.tagl{text-align:center;font-family:'Bebas Neue',sans-serif;font-size:1.7rem;letter-spacing:.08em;color:#ff7ac0;margin-top:10px;text-shadow:0 0 14px rgba(255,46,147,.55)}
+.blurb{margin:4px 0 14px;padding:14px 16px;border-radius:16px;border-left:4px solid #ff2e93;background:rgba(255,255,255,.04);color:#e4defa;font-size:.95rem;line-height:1.5}
+.blurb b{color:#fff}.blurb .hd{font-family:'Bebas Neue',sans-serif;font-size:1.5rem;letter-spacing:.06em;color:#ff7ac0;line-height:1;margin-bottom:6px}
 </style>
 """
 
 st.set_page_config(page_title="scoregasm", page_icon="🔥", initial_sidebar_state="collapsed")
 st.markdown(CSS, unsafe_allow_html=True)
 st.markdown('<div class="logo">SCOREGASM</div><div class="tag">the odds of the perfect tie</div>', unsafe_allow_html=True)
-c_t, c_h = st.columns([1, 2])
-target = c_t.number_input("🎯 Target tie score", 1, 150, 69)
-c_h.markdown(f'<div class="small" style="padding-top:26px">CHANCE A GAME IS EVER TIED AT EXACTLY {target}–{target}</div>',
-             unsafe_allow_html=True)
+st.markdown('<div class="blurb"><div class="hd">WHAT THE HELL IS A SCOREGASM</div>'
+            'Two teams. One number. <b>69–69.</b> Not 70, not 68.</div>', unsafe_allow_html=True)
+target = 69   # Scoregasm is about one number
+st.markdown('<div class="small" style="margin:2px 0 6px">CHANCE A GAME IS EVER TIED AT EXACTLY 69–69</div>', unsafe_allow_html=True)
 
 
 def get_games_safe():
@@ -256,7 +264,7 @@ def result_card(p, a, b, target):
             f'<div class="duo"><div><div class="big">{fmt_pct(p)}</div><div class="lab">CHANCE</div></div>'
             f'<div><div class="ring" style="--v:{score}"><div class="ringin"><div class="rn">{score}</div>'
             f'<div class="rl">CHUBB</div></div></div><div class="lab" style="margin-top:8px">CHUBB METER</div></div></div>'
-            f'<div class="strip">{strip}</div><div class="plain">{plain}</div>'
+            f'<div class="strip">{strip}</div><div class="tagl">{TAGLINES[label]}</div><div class="plain">{plain}</div>'
             f'<div class="road"><i style="width:{close * 100:.1f}%"></i></div>'
             f'<div class="small">ROAD TO {target}–{target} · {close * 100:.0f}% THERE · NEEDS {na} AND {nb} MORE</div></div>')
 
@@ -292,11 +300,15 @@ def board_view():
     if live:
         for g in live:
             if g["a"] == g["b"] == target:
-                st.markdown(f'<div class="party">🎆 SCOREGASM! {g["away"]} AND {g["home"]} ARE TIED {target}–{target} RIGHT NOW 🎆</div>',
+                st.markdown(f'<div class="party">🎆🎆 SCOREGASM! {g["away"]} AND {g["home"]} ARE TIED {target}–{target} RIGHT NOW. GET TO THE TV 🎆🎆</div>',
                             unsafe_allow_html=True)
+                seen = st.session_state.setdefault("celebrated", set())
+                if g["id"] not in seen:          # confetti once per game, not every refresh
+                    seen.add(g["id"])
+                    st.balloons()
         top = max(live, key=lambda g: st_by_id[g["id"]]["score"])
         s = st_by_id[top["id"]]
-        st.markdown('<div style="text-align:center"><span class="pill"><span class="dot"></span>HOTTEST GAME RIGHT NOW</span></div>',
+        st.markdown('<div style="text-align:center"><span class="pill"><span class="dot"></span>🔥 HOTTEST GAME RIGHT NOW</span></div>',
                     unsafe_allow_html=True)
         st.markdown(scoreboard(top["away"], top["a"], top["home"], top["b"], target), unsafe_allow_html=True)
         st.markdown(f'<div class="clock">{top["detail"].upper()}</div>', unsafe_allow_html=True)
@@ -426,8 +438,7 @@ def games_for(scope):
 
 @st.fragment(run_every=60)
 def log_view():
-    if target != 69:
-        st.info("The Hall of Fame tracks 69–69 only. Set the target back to 69 to see it.")
+    st.markdown('<div class="small" style="margin:2px 0 8px">🏆 THE HALL OF FAME · WHERE THE LEGENDS GOT TIED</div>', unsafe_allow_html=True)
     scope = "launch" if st.radio("Scope", ["🌍 All-time", "🚀 Since launch (2026)"], horizontal=True,
                                  label_visibility="collapsed").startswith("🚀") else "all"
     g = games_for(scope)
@@ -442,7 +453,7 @@ def log_view():
     if scope == "all":
         st.caption("All-time = every game in the archive, plus this season. Older games show a season, not a date.")
     if not len(hits):
-        st.info("🥀 Nothing here yet." + (" The first scoregasm of 2026–27 takes every record. Updated daily." if scope == "launch"
+        st.info("🥀 Limp. Nothing here yet." + (" The first scoregasm of 2026–27 takes every record. Updated daily." if scope == "launch"
                                            else " Build the archive with build_archive.py, then put scoregasm_archive.csv next to this app."))
     view = st.radio("Log", ["🏆 Hall of Fame", "🥵 Edged"], horizontal=True, label_visibility="collapsed")
     if view.startswith("🏆"):
@@ -481,11 +492,19 @@ with st.expander("How does this work, and how accurate is it?"):
         "**The Chubb meter** is a display scale, not a probability: the odds on a log scale (1% is about 37, 3% about 55, "
         "10% about 74, 30% about 92), multiplied by how far the game is along the road to the target. That's why 10-10 "
         "sits near the bottom even though the odds look similar, and why the meter climbs as the score heads toward 69. "
-        "🥀 Limp 0 · 👀 Eyes on it 20 · 🌶️ Half chub 40 · 🔥 Close 60 · 🎆 Scoregasm 80.\n\n"
-        "**Accuracy.** I replayed 2,663 real games (2018–21). At five moments per game the model gave a probability for "
-        "every possible tied score using only the score and clock then, and I checked what happened next. Forecasts of "
-        "about 3% hit 3.1% of the time (9,272 of 296,350), and 5% forecasts hit 5.3%. Brier score (average squared "
-        "error) and log loss agree. A single forecast is never right or wrong, only the pooled record can be judged. "
-        "The same game appears in many forecasts, and odds above 15% ran a bit high.")
-st.markdown('<div class="foot">Backtested on 2,663 real NBA games (2018–21): predicted tie rates match actual within about '
-            '0.1 point overall. Regulation only. Just for fun, not betting advice.</div>', unsafe_allow_html=True)
+        "🥀 Limp 0 · 👀 Eyes on it 20 · 🌭 Half chub 40 · 🔥 Close 60 · 🎆 Scoregasm 80.\n\n"
+        "**Accuracy.** Two checks on real games, 12,805 of them from 2015-16 through 2024-25.\n\n"
+        "*Start of the game:* the model says a game has a 3.6% chance of passing through 69–69. In real life it happened "
+        "422 times in 12,805 games, or 3.3%. From 2015 to 2020 it was 3.5%, and from 2020 to 2025 it was 3.1%, a bit "
+        "under the model. The gap could be luck (about a 6% chance of that) or a real shift in how the league plays. "
+        "We tested several explanations and none held up, so it stays a mystery.\n\n"
+        "*During the game:* I replayed games moment by moment, with the model using only the score and clock at that "
+        "moment. On 2018-21 games, forecasts of about 3% hit 3.1% of the time (9,272 of 296,350) and 5% forecasts hit "
+        "5.3%. Then I tested it on 2015-18, three seasons it had never seen, across 1.78 million forecasts: predicted "
+        "2.07% overall, actual 2.02%. Odds from about 2% to 16% were accurate. Very low odds (under 2%) ran a bit high on "
+        "those older seasons, and odds above 15% are noisy because there are few of them. A single forecast is never "
+        "right or wrong, only the pooled record can be judged. The same game appears in many forecasts.\n\n"
+        "*Not in the model:* team strength, injuries, rest, and the point spread. We tested team strength and spread-like "
+        "ratings and found no measurable gain.")
+st.markdown('<div class="foot">Checked against 12,805 real NBA games (2015–25): 69–69 happens in about 3.3% of games, '
+            'the model says 3.6%. Regulation only. Just for fun, not betting advice.</div>', unsafe_allow_html=True)
