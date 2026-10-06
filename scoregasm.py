@@ -1,6 +1,7 @@
 """SCOREGASM: chance an NBA game passes through an exact tied score (default 69-69).
 Run:  pip3 install streamlit requests numpy   then   streamlit run scoregasm.py
 """
+import datetime
 import math
 
 import numpy as np
@@ -17,17 +18,15 @@ SEQ = [(.513, []), (.115, [3]), (.003, [3, 4]), (.254, [2]), (.033, [2, 3]), (.0
 BASE_PPP = sum(p * (c[-1] if c else 0) for p, c in SEQ)  # about 1.106 points per possession
 
 
-def patterns(ppp):
-    """Scale scoring chances up or down to hit a team's points per possession."""
-    s = ppp / BASE_PPP
-    scoring = [(p * s, c) for p, c in SEQ[1:]]
-    p0 = max(0.0, 1 - sum(p for p, _ in scoring))
-    tot = p0 + sum(p for p, _ in scoring)
-    return [(p0 / tot, [])] + [(p / tot, c) for p, c in scoring]
+SC = SEQ[1:]                          # the scoring outcomes
+SC_TOT = sum(p for p, _ in SC)        # chance a possession scores at all (about 0.49)
+MARGIN_K, MARGIN_CAP = 0.002, 20      # trailing team scores ~0.2% faster per point behind (up to 20)
 
 
 def tie_probability(a, b, minutes_left, ppa, ppb, pace, target):
-    """Chance the game is exactly target-target at some point before regulation ends."""
+    """Chance the game is exactly target-target at some point before regulation ends.
+    ppa/ppb = points per possession for each team. The trailing team scores slightly faster and
+    the leader slightly slower (comebacks, garbage time), a fix found by backtesting on real games."""
     if a > target or b > target:
         return 0.0
     if a == target and b == target:
@@ -35,29 +34,29 @@ def tie_probability(a, b, minutes_left, ppa, ppb, pace, target):
     n = round(minutes_left * 2 * pace / 48)  # possessions left, both teams combined
     da, db = target - a, target - b          # points each team is short of the target
     wa, wb = da + 1, db + 1
-    pat_a, pat_b = patterns(ppa), patterns(ppb)
+    ia, ib = np.meshgrid(np.arange(wa), np.arange(wb), indexing="ij")
+    m = np.clip(ib - ia, -MARGIN_CAP, MARGIN_CAP)   # margin (A minus B) at each state = db - da
+    sa = np.clip(ppa / BASE_PPP * (1 - MARGIN_K * m), 0.3, 2.0)   # A's scoring rate in each state
+    sb = np.clip(ppb / BASE_PPP * (1 + MARGIN_K * m), 0.3, 2.0)
     zero = np.zeros((wa, wb)); zero[0, 0] = 1
     ga, gb = zero.copy(), zero.copy()        # ga/gb[x, y]: chance of landing on target when x, y short
     for _ in range(n):                       # build backward from the target, one possession at a time
-        new_a, new_b = np.zeros((wa, wb)), np.zeros((wa, wb))
-        for p, cum in pat_a:                 # team A has the ball
-            c = cum[-1] if cum else 0
-            t = np.zeros((wa, wb))
+        new_a = (1 - sa * SC_TOT) * gb       # A has the ball and doesn't score; B gets it
+        new_b = (1 - sb * SC_TOT) * ga
+        for p, cum in SC:
+            c = cum[-1]
+            ta, tb = np.zeros((wa, wb)), np.zeros((wa, wb))
             if c < wa:
-                t[c:, :] = gb[: wa - c, :]
-            for cj in cum:
-                if cj < wa:
-                    t[cj, 0] = 1             # hit the target in the middle of the possession
-            new_a += p * t
-        for p, cum in pat_b:                 # team B has the ball
-            c = cum[-1] if cum else 0
-            t = np.zeros((wa, wb))
+                ta[c:, :] = gb[: wa - c, :]
             if c < wb:
-                t[:, c:] = ga[:, : wb - c]
-            for cj in cum:
+                tb[:, c:] = ga[:, : wb - c]
+            for cj in cum:                   # landed on the target in the middle of a possession
+                if cj < wa:
+                    ta[cj, 0] = 1
                 if cj < wb:
-                    t[0, cj] = 1
-            new_b += p * t
+                    tb[0, cj] = 1
+            new_a += p * sa * ta
+            new_b += p * sb * tb
         new_a[0, 0] = new_b[0, 0] = 1
         ga, gb = new_a, new_b
     return float((ga[da, db] + gb[da, db]) / 2)  # average over who has the ball first
@@ -93,10 +92,72 @@ def get_games():
         away, home = side["away"]["team"]["abbreviation"], side["home"]["team"]["abbreviation"]
         games.append({
             "label": f'{away} @ {home} ({s["type"]["shortDetail"]})', "away": away, "home": home,
+            "away_id": str(side["away"]["team"]["id"]), "home_id": str(side["home"]["team"]["id"]),
             "state": s["type"]["state"], "period": s["period"], "clock": s.get("clock"),
             "a": int(side["away"].get("score") or 0), "b": int(side["home"].get("score") or 0),
         })
     return games
+
+
+# ---------------------------------------------------------------- team tuning
+HOME_EDGE = 0.012          # home team scores ~1.2% more per possession, away ~1.2% less
+NEUTRAL = {"off": 1.0, "def": 1.0}
+
+
+def default_season():
+    """ESPN names a season by its ending year. Before October, last season ends this year."""
+    t = datetime.date.today()
+    return (t.year + 1 if t.month >= 10 else t.year) - 1
+
+
+def _entries(node):
+    if isinstance(node, dict):
+        if isinstance(node.get("entries"), list):
+            yield from node["entries"]
+        for v in node.values():
+            yield from _entries(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _entries(v)
+
+
+def parse_ratings(data):
+    """ESPN standings JSON -> {team_id: {abbr, name, off, def}} where off/def are points for/against
+    per game divided by the league average (off > 1 scores a lot; def > 1 gives up a lot)."""
+    raw = {}
+    for e in _entries(data):
+        team, stats = e.get("team") or {}, {x.get("name"): x.get("value") for x in e.get("stats", [])}
+        pf, pa = stats.get("avgPointsFor"), stats.get("avgPointsAgainst")
+        if pf is None and stats.get("pointsFor") and stats.get("gamesPlayed"):
+            pf, pa = stats["pointsFor"] / stats["gamesPlayed"], stats["pointsAgainst"] / stats["gamesPlayed"]
+        if team.get("id") is None or pf is None or pa is None:
+            continue
+        raw[str(team["id"])] = {"abbr": team.get("abbreviation", "?"), "name": team.get("displayName", "?"),
+                                "pf": float(pf), "pa": float(pa)}
+    if not raw:
+        return {}
+    lg = sum(t["pf"] for t in raw.values()) / len(raw)
+    return {k: {"abbr": t["abbr"], "name": t["name"], "off": t["pf"] / lg, "def": t["pa"] / lg} for k, t in raw.items()}
+
+
+@st.cache_data(ttl=6 * 3600)
+def load_ratings(season):
+    url = f"https://site.api.espn.com/apis/v2/sports/basketball/nba/standings?season={season}"
+    return parse_ratings(requests.get(url, timeout=10).json())
+
+
+def team_ppp(id_a, id_b, base, trust, ratings, b_is_home=False):
+    """Points per possession for A and B. Each team's scoring = league base x its offense x the
+    other team's defense, shrunk toward average by 'trust' (last season only partly carries over)."""
+    if not ratings or (id_a not in ratings and id_b not in ratings):
+        return base, base, False
+    ra, rb = ratings.get(id_a, NEUTRAL), ratings.get(id_b, NEUTRAL)
+    shr = lambda x: 1 + trust * (x - 1)
+    ppa = base * shr(ra["off"]) * shr(rb["def"])
+    ppb = base * shr(rb["off"]) * shr(ra["def"])
+    if b_is_home:
+        ppa, ppb = ppa * (1 - HOME_EDGE), ppb * (1 + HOME_EDGE)
+    return ppa, ppb, True
 
 
 # ---------------------------------------------------------------- the look
@@ -151,9 +212,20 @@ st.markdown('<div class="logo">SCOREGASM</div><div class="tag">the odds of the p
 with st.sidebar:
     st.markdown("### ⚙️ Tuning")
     target = st.number_input("Target tied score", 1, 150, 69)
-    ppa = st.number_input("Team A points/possession (league avg ≈ 1.11)", 0.5, 2.0, 1.11, 0.01)
-    ppb = st.number_input("Team B points/possession (league avg ≈ 1.11)", 0.5, 2.0, 1.11, 0.01)
+    use_teams = st.toggle("Auto-tune to team averages", value=True)
+    season = st.number_input("Ratings season (ending year, 2026 = 2025-26)", 2015, 2100, default_season(), 1)
+    trust = st.slider("Trust in that season's averages", 0, 100, 50, 5) / 100
+    base = st.number_input("League-average points/possession", 0.5, 2.0, 1.11, 0.01)
     pace = st.number_input("Pace (possessions per 48 min, per team)", 80, 120, 100)
+
+ratings = {}
+if use_teams:
+    try:
+        ratings = load_ratings(int(season))
+    except Exception:
+        ratings = {}
+    if not ratings:
+        st.sidebar.warning("Couldn't load team averages, so odds use league-average teams.")
 
 
 def board(ab_a, a, ab_b, b, target):
@@ -207,10 +279,17 @@ def live_view():
         b = c2.number_input("Team B score", 0, 200, 30)
         q = st.selectbox("Quarter", [1, 2, 3, 4], index=1)
         mm = st.number_input("Minutes left in quarter", 0.0, 12.0, 12.0, 0.5)
-        names = ("TEAM A", "TEAM B")
+        by_name = {t["name"]: k for k, t in ratings.items()}
+        opts = ["League average"] + sorted(by_name)
+        t1, t2 = st.columns(2)
+        pick_a, pick_b = t1.selectbox("Team A", opts), t2.selectbox("Team B", opts)
+        id_a, id_b = by_name.get(pick_a), by_name.get(pick_b)
+        names = (ratings[id_a]["abbr"] if id_a else "TEAM A", ratings[id_b]["abbr"] if id_b else "TEAM B")
+        b_home = False
     else:
         a, b = g["a"], g["b"]
         names = (g["away"], g["home"])
+        id_a, id_b, b_home = g["away_id"], g["home_id"], True
         if g["state"] == "post":
             st.markdown(board(names[0], a, names[1], b, target), unsafe_allow_html=True)
             return st.info("Game is over.")
@@ -220,13 +299,17 @@ def live_view():
         mm = (g["clock"] / 60) if g["state"] == "in" and g["clock"] is not None else 12.0
 
     minutes_left = (4 - q) * 12 + mm
+    ppa, ppb, tuned = team_ppp(id_a, id_b, base, trust, ratings, b_home)
+    note = f'TEAM-TUNED · {names[0]} {ppa:.2f} · {names[1]} {ppb:.2f} PTS/POSS' if tuned else 'LEAGUE-AVERAGE TEAMS'
     st.markdown(board(names[0], a, names[1], b, target), unsafe_allow_html=True)
-    st.markdown(f'<div class="clock">Q{q} · {int(mm)}:{int((mm % 1) * 60):02d} LEFT</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="clock">Q{q} · {int(mm)}:{int((mm % 1) * 60):02d} LEFT<br>{note}</div>', unsafe_allow_html=True)
     p = tie_probability(a, b, minutes_left, ppa, ppb, pace, target)
     st.markdown(result_card(p, target), unsafe_allow_html=True)
 
 
 live_view()
-st.markdown('<div class="foot">Model backtested on 2,663 real NBA games (2018–21). Overall it ran about 10% below the '
-            'real tie rate, most for lopsided games. Regulation only. Just for fun, not betting advice.</div>',
+st.markdown('<div class="foot">Backtested on 2,663 real NBA games (2018–21): predicted tie rates now match actual '
+            'within about 0.1 point overall and across game margins and seasons. The high-odds end (above 15%) may run a bit '
+            'high. Team tuning (tested on 2019-20 using 2018-19 averages) moved odds a median 5%, in the right direction, '
+            'but the gain was too small to prove. Regulation only. Just for fun, not betting advice.</div>',
             unsafe_allow_html=True)
