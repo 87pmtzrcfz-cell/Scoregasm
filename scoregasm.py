@@ -1,10 +1,7 @@
 """SCOREGASM: odds an NBA game passes through an exact tied score (default 69-69).
 Run:  pip3 install streamlit requests numpy pandas   then   python3 -m streamlit run scoregasm.py
-Keep scoregasm_history.csv in the same folder (it powers the Hall of Scoregasms tab)."""
-import csv
-import datetime
+The Hall of Fame reads scoregasm_archive.csv (built once by build_archive.py) and scoregasm_season.csv (filled daily by update_log.py)."""
 import functools
-import glob
 import math
 import os
 
@@ -14,11 +11,8 @@ import requests
 import streamlit as st
 
 FEED = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
-SUMMARY = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event={}"
 HERE = os.path.dirname(os.path.abspath(__file__))
-LIVE_LOG = os.path.join(HERE, "scoregasm_live_log.csv")
-LOG_COLS = ["date", "season", "game_type", "away", "home", "tie_score", "quarter", "clock", "ot",
-            "away_final", "home_final", "game_id", "source"]
+LAUNCH = "2026-10-01"  # the Hall of Fame counts games from this date on
 PACE = 100  # possessions per 48 minutes, per team (barely matters for this question)
 
 # ================================================================ the math
@@ -110,7 +104,7 @@ def fmt_pct(p):
     return "0%" if pct == 0 else "<0.1%" if pct < 0.1 else f"{pct:.2f}%" if pct < 10 else f"{pct:.1f}%"
 
 
-# ================================================================ live feed + scoregasm log
+# ================================================================ live feed
 @st.cache_data(ttl=10)
 def get_games():
     data = requests.get(FEED, timeout=10).json()
@@ -125,67 +119,6 @@ def get_games():
             "a": int(side["away"].get("score") or 0), "b": int(side["home"].get("score") or 0),
         })
     return games
-
-
-def scan_ties(plays):
-    """{tied score: (period, clock)} for the first moment each tied score appears (0-0 = tip-off)."""
-    seen = {}
-    for p in plays:
-        try:
-            a, h = int(p.get("awayScore")), int(p.get("homeScore"))
-        except (TypeError, ValueError):
-            continue
-        if a == h and a not in seen:
-            seen[a] = (int((p.get("period") or {}).get("number") or 0), (p.get("clock") or {}).get("displayValue", ""))
-    return seen
-
-
-_FAILED = set()
-
-
-def logged_ids():
-    if not os.path.exists(LIVE_LOG):
-        return set()
-    try:
-        return set(pd.read_csv(LIVE_LOG, usecols=["game_id"]).game_id.astype(str))
-    except Exception:
-        return set()
-
-
-def log_finished(g):
-    """When a game ends, read its play-by-play and log every tied score it passed through."""
-    gid = g["id"]
-    if gid in _FAILED or gid in logged_ids():
-        return
-    try:
-        data = requests.get(SUMMARY.format(gid), timeout=10).json()
-        ties = scan_ties(data.get("plays", []))
-        if not ties:
-            _FAILED.add(gid)
-            return
-        date = ((data.get("header", {}).get("competitions") or [{}])[0].get("date") or "")[:10] or datetime.date.today().isoformat()
-    except Exception:
-        _FAILED.add(gid)
-        return
-    new = not os.path.exists(LIVE_LOG)
-    with open(LIVE_LOG, "a", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=LOG_COLS)
-        if new:
-            w.writeheader()
-        for score, (per, clk) in sorted(ties.items()):
-            w.writerow({"date": date, "season": "", "game_type": "", "away": g["away"], "home": g["home"], "tie_score": score,
-                        "quarter": per, "clock": clk, "ot": per > 4, "away_final": g["a"], "home_final": g["b"],
-                        "game_id": gid, "source": "live"})
-
-
-@st.cache_data(ttl=300)
-def load_log():
-    frames = [pd.read_csv(f) for f in sorted(glob.glob(os.path.join(HERE, "scoregasm_history*.csv")))]
-    if os.path.exists(LIVE_LOG):
-        frames.append(pd.read_csv(LIVE_LOG))
-    if not frames:
-        return pd.DataFrame(columns=LOG_COLS)
-    return pd.concat(frames, ignore_index=True).drop_duplicates(["game_id", "tie_score"])
 
 
 def game_state(g, target):
@@ -264,6 +197,19 @@ button[data-baseweb="tab"] p{font-weight:700;letter-spacing:.04em;font-size:1rem
 .gc{font-size:.72rem;letter-spacing:.1em;color:#a79fc9;font-weight:700}
 .gbar{height:6px;border-radius:99px;background:rgba(255,255,255,.08);margin-top:9px;overflow:hidden}
 .gbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#22e4ff,#8b5cff,#ff2e93)}
+.sp{margin:10px 0;padding:14px 16px;border-radius:18px;background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.14)}
+.sp.LEGENDARY{border-color:#ffd24a;box-shadow:0 0 28px rgba(255,210,74,.45)}
+.sp.EPIC{border-color:#b36bff;box-shadow:0 0 22px rgba(179,107,255,.4)}
+.sp.RARE{border-color:#4aa8ff;box-shadow:0 0 18px rgba(74,168,255,.3)}
+.sp.UNCOMMON{border-color:#4be08a}
+.sp.EDGED{border-color:#ff2e93;box-shadow:0 0 22px rgba(255,46,147,.35)}
+.sp.HOF{border-color:#ffd24a;box-shadow:0 0 26px rgba(255,210,74,.4)}
+.sp.HOF .spt{color:#ffd24a}
+.spt{font-size:.72rem;letter-spacing:.14em;font-weight:700;color:#ffd9a0}
+.sp.EPIC .spt{color:#d9b3ff}.sp.RARE .spt{color:#a9d4ff}.sp.UNCOMMON .spt{color:#a8f0c6}.sp.EDGED .spt{color:#ff9ad0}
+.spg{font-family:'Bebas Neue',sans-serif;font-size:1.55rem;letter-spacing:.04em;color:#fff;margin-top:2px}
+.spb{font-size:1.1rem;letter-spacing:.2em;margin:2px 0}
+.sph{color:#cfc8ee;font-size:.9rem;line-height:1.45;margin:4px 0 6px}
 </style>
 """
 
@@ -339,9 +285,6 @@ def board_view():
     games = get_games_safe()
     if not games:
         return st.info("No games found right now. Try the Check a game tab.")
-    for g in games:
-        if g["state"] == "post":
-            log_finished(g)   # when a game ends, log every tied score it passed through
     st_by_id = {g["id"]: game_state(g, target) for g in games}
     items = '<i>◆</i>'.join(f'{g["away"]} <b>{g["a"]}</b> – <b>{g["b"]}</b> {g["home"]}' for g in games)
     st.markdown(f'<div class="ticker"><div>{items}</div></div>', unsafe_allow_html=True)
@@ -395,31 +338,134 @@ def game_view():
     st.markdown(result_card(p, a, b, target), unsafe_allow_html=True)
 
 
-@st.fragment(run_every=30)
+GAP_LABEL = {1: "🥵 1 away", 2: "😬 2 away", 3: "😮 3 away"}
+ENDED = {"overshot": "jumped over it", "pulled away": "leader scored again", "end of regulation": "regulation ended"}
+
+
+@st.cache_data(ttl=300)
+def load_csv(name):
+    path = os.path.join(HERE, name)
+    return pd.read_csv(path, dtype={"game_id": str}) if os.path.exists(path) else None
+
+
+def when_label(q, clock):
+    q = int(q)
+    return f"{'Q' + str(q) if q <= 4 else 'OT' + str(q - 4)} {clock}"
+
+
+def mmss(sec):
+    return f"{int(sec) // 60}:{int(sec) % 60:02d}"
+
+
+def final(r):
+    return f"{int(r.away_final)}–{int(r.home_final)}"
+
+
+def when_of(r):
+    """Archive games have no date, only a season; live-season games have both."""
+    return r.date if isinstance(r.date, str) and r.date else r.season
+
+
+# (heading, column, biggest-is-best, what to say about the winner)
+RECORDS = [
+    ("⏰ EARLIEST SCOREGASM", "elapsed_min", False, lambda r: f"{when_label(r.quarter, r.clock)}, {r.elapsed_min:.1f} minutes in"),
+    ("🌙 LATEST SCOREGASM", "elapsed_min", True, lambda r: f"{when_label(r.quarter, r.clock)}, {r.elapsed_min:.1f} minutes in"),
+    ("🧟 BACK FROM THE DEAD (WILD CARD)", "max_deficit", True, lambda r: f"{r.tied_by} was down {int(r.max_deficit)} and still got there"),
+]
+MEDAL = ["🥇", "🥈", "🥉"]
+
+
+def record_cards(sp, n=3):
+    """Top n games for each record. Equal values: the older game ranks first."""
+    out = []
+    sp = sp.assign(game_id=sp.game_id.astype(str)).sort_values(["season", "game_id"])
+    for title, col, biggest, show in RECORDS:
+        out.append(f'<div class="small" style="margin:18px 0 2px">{title}</div>')
+        top = sp.sort_values(col, ascending=not biggest, kind="stable").head(n)
+        for k, (_, r) in enumerate(top.iterrows()):
+            out.append(f'<div class="sp HOF"><div class="spt">{MEDAL[k]} {show(r).upper()}</div>'
+                       f'<div class="spg">{r.away} @ {r.home} · {when_of(r)}</div>'
+                       f'<div class="sph">{r.how}</div><div class="small">FINAL {final(r)}</div></div>')
+    return "".join(out)
+
+
+def scoregasm_table(sp):
+    t = sp.assign(game_id=sp.game_id.astype(str)).sort_values(["season", "game_id"], ascending=False)
+    return pd.DataFrame({"When": [when_of(r) for r in t.itertuples()], "Game": t.away + " @ " + t.home,
+                         "Hit at": [when_label(q, c) for q, c in zip(t.quarter, t.clock)],
+                         "Comeback": t.max_deficit.astype(int), "Story": t.how, "Final": [final(r) for r in t.itertuples()]})
+
+
+def edged_cards_html(ed, target, n=3):
+    """The closest calls: smallest gap, then the longest tease."""
+    out = []
+    for _, r in ed.sort_values(["closest_gap", "wait_sec"], ascending=[True, False]).head(n).iterrows():
+        out.append(f'<div class="sp EDGED"><div class="spt">💔 {GAP_LABEL[int(r.closest_gap)].upper()} · SAT ON {target} FOR {mmss(r.wait_sec)}</div>'
+                   f'<div class="spg">{r.away} @ {r.home} · {when_of(r)}</div><div class="sph">{r.how}</div>'
+                   f'<div class="small">FINAL {final(r)}</div></div>')
+    return "".join(out)
+
+
+def edged_table(ed, target, max_gap=3):
+    t = ed[ed.closest_gap <= max_gap].assign(game_id=lambda d: d.game_id.astype(str)).sort_values(["season", "game_id"], ascending=False)
+    return pd.DataFrame({
+        "When": [when_of(r) for r in t.itertuples()], "Game": t.away + " @ " + t.home, "Close": t.closest_gap.astype(int).map(GAP_LABEL), f"Sat on {target}": t.leader,
+        "Other got to": t.closest_score.astype(int), "Waited": t.wait_sec.map(mmss), "Ended": t.ending.map(ENDED), "Story": t.how,
+        "Final": [final(r) for r in t.itertuples()]})
+
+
+def games_for(scope):
+    """All-time = the archive (1996 on) plus every live-season game. Since launch = live-season games only."""
+    season = load_csv("scoregasm_season.csv")
+    season = season[season.date >= LAUNCH] if season is not None else None
+    if scope == "launch":
+        return season if season is not None else pd.DataFrame(columns=["game_id", "result"])
+    frames = [f for f in (load_csv("scoregasm_archive.csv"), season) if f is not None]
+    return pd.concat(frames, ignore_index=True).drop_duplicates("game_id") if frames else pd.DataFrame(columns=["game_id", "result"])
+
+
+@st.fragment(run_every=60)
 def log_view():
-    h = load_log()
-    h = h.assign(season=h.season.fillna("live").replace("", "live"))
-    n_games = int((h.tie_score == 0).sum())
-    hits = h[h.tie_score == target]
-    if n_games == 0:
-        return st.info("No log yet. Put scoregasm_history.csv in the same folder as this app.")
-    expect = tp(0, 0, 48.0, target)
+    if target != 69:
+        st.info("The Hall of Fame tracks 69–69 only. Set the target back to 69 to see it.")
+    scope = "launch" if st.radio("Scope", ["🌍 All-time", "🚀 Since launch (2026)"], horizontal=True,
+                                 label_visibility="collapsed").startswith("🚀") else "all"
+    g = games_for(scope)
+    n_games = len(g)
+    hits = g[g.result == "scoregasm"]
+    ed = g[g.result == "edged"]
     c1, c2, c3 = st.columns(3)
     c1.metric("Games logged", f"{n_games:,}")
-    c2.metric(f"Scoregasms at {target}–{target}", f"{len(hits):,}")
-    c3.metric("Share of games", f"{len(hits) / n_games * 100:.2f}%", f"model at tip-off: {expect * 100:.2f}%", delta_color="off")
-    per = h.groupby("season").agg(games=("tie_score", lambda s: int((s == 0).sum())), hits=("tie_score", lambda s: int((s == target).sum())))
-    st.caption(" · ".join(f"{k}: {r.hits} of {r.games:,}" for k, r in per.iterrows()))
-    if hits.empty:
-        return st.info(f"No logged game has hit {target}–{target} yet.")
-    t = hits.sort_values(["date", "game_id"], ascending=False)
-    when = lambda r: f"{'Q' + str(int(r.quarter)) if int(r.quarter) <= 4 else 'OT' + str(int(r.quarter) - 4)} {r.clock}"
-    st.dataframe(pd.DataFrame({"Date": t.date, "Game": t.away + " @ " + t.home, "Hit at": t.apply(when, axis=1),
-                               "Final": t.away_final.astype(int).astype(str) + "–" + t.home_final.astype(int).astype(str),
-                               "Source": t.source}), hide_index=True, use_container_width=True)
+    c2.metric("Scoregasms 69–69", f"{len(hits):,}")
+    c3.metric("Share of games", f"{len(hits) / n_games * 100:.1f}%" if n_games else "–", f"model at tip-off: {tp(0, 0, 48.0, 69) * 100:.1f}%",
+              delta_color="off")
+    if scope == "all":
+        st.caption("All-time = every game in the archive, plus this season. Older games show a season, not a date.")
+    if not len(hits):
+        st.info("🥀 Nothing here yet." + (" The first scoregasm of 2026–27 takes every record. Updated daily." if scope == "launch"
+                                           else " Build the archive with build_archive.py, then put scoregasm_archive.csv next to this app."))
+    view = st.radio("Log", ["🏆 Hall of Fame", "🥵 Edged"], horizontal=True, label_visibility="collapsed")
+    if view.startswith("🏆"):
+        if len(hits):
+            st.markdown(record_cards(hits), unsafe_allow_html=True)
+            with st.expander(f"Every scoregasm in this view ({len(hits):,})"):
+                st.dataframe(scoregasm_table(hits), hide_index=True, use_container_width=True,
+                             column_config={"Story": st.column_config.TextColumn(width="large")})
+    else:
+        st.caption("EDGED: a team reached exactly 69, the other got within 3 points while it sat there, and the tie never happened.")
+        if not len(ed):
+            return st.info("No near-misses logged here yet.")
+        e1, e2 = st.columns(2)
+        e1.metric("Edged games", f"{len(ed):,}")
+        e2.metric("Within 2 points", f"{int((ed.closest_gap <= 2).sum()):,}")
+        st.markdown('<div class="small" style="margin:6px 0">CLOSEST CALLS</div>', unsafe_allow_html=True)
+        st.markdown(edged_cards_html(ed, 69), unsafe_allow_html=True)
+        pick = st.selectbox("How close", ["Within 3 (all)", "Within 2", "Exactly 1 away"])
+        st.dataframe(edged_table(ed, 69, {"Within 3 (all)": 3, "Within 2": 2, "Exactly 1 away": 1}[pick]),
+                     hide_index=True, use_container_width=True, column_config={"Story": st.column_config.TextColumn(width="large")})
 
 
-tab_board, tab_game, tab_log = st.tabs(["📺 Tonight", "🧮 Check a game", "🏆 Hall of Scoregasms"])
+tab_board, tab_game, tab_log = st.tabs(["📺 Tonight", "🧮 Check a game", "🏆 Hall of Fame"])
 with tab_board:
     board_view()
 with tab_game:
