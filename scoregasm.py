@@ -251,7 +251,6 @@ button[data-baseweb="tab"] p{font-weight:500;letter-spacing:.14em;font-size:.72r
 st.set_page_config(page_title="scoregasm", page_icon="🌴", initial_sidebar_state="collapsed")
 st.markdown(CSS, unsafe_allow_html=True)
 st.markdown('<div class="logo">SCOREGASM</div><div class="tag">the odds of finishing together</div>', unsafe_allow_html=True)
-st.markdown('<div class="warn">🔞 VIEWER DISCRETION ADVISED · EXCESSIVE TIE-RELATED INNUENDO</div>', unsafe_allow_html=True)
 st.markdown('<div style="text-align:center;color:#8f8aa3;font-size:.95rem;letter-spacing:.08em;font-weight:300;margin:2px 0 18px">'
             'Two teams. One number. <b style="color:#fff">69–69.</b> Not 70, not 68.</div>', unsafe_allow_html=True)
 target = 69   # Scoregasm is about one number
@@ -394,12 +393,8 @@ def board_view():
         pre_left = any(st_by_id[g["id"]]["kind"] == "pre" for g in games)
         st.markdown(f'<div style="text-align:center"><span class="pill">NO GAMES LIVE · NO ACTION YET, BACK AT TIP-OFF{" · PREGAME ODDS BELOW" if pre_left else ""}</span></div>',
                     unsafe_allow_html=True)
-    hide = st.toggle("Hide finished games (they are already asleep)", key="hide_final")
-    shown = [g for g in games if not (hide and st_by_id[g["id"]]["kind"] == "final")]
-    if shown:
-        st.markdown(tonight_html(shown, st_by_id, target), unsafe_allow_html=True)
-    else:
-        st.info("Every game on the board is final. Flip the switch to see them.")
+    if games:
+        st.markdown(tonight_html(games, st_by_id, target), unsafe_allow_html=True)
 
 
 @st.fragment(run_every=15)
@@ -779,5 +774,4 @@ with st.expander("Show me the math (be gentle)"):
         "*Not in the model:* team strength, injuries, rest, and the point spread. We tested team strength and spread-like "
         "ratings and found no measurable gain.")
 st.markdown('<div class="foot">Checked against 12,805 real NBA games (2015–25): 69–69 happens in about 3.3% of games, '
-            'the model says 3.6%. Regulation only. Just for fun, not betting advice. Please finish responsibly. '
-            'If your tie lasts more than 4 hours, consult a physician. (It won\'t. It\'s one possession.)</div>', unsafe_allow_html=True)
+            'the model says 3.6%. Regulation only. Just for fun, not betting advice.</div>', unsafe_allow_html=True)
