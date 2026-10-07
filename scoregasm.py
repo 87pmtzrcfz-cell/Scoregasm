@@ -266,7 +266,7 @@ def get_games_safe():
         feed = st.session_state.get("last_good")
         st.session_state["feed_error"] = True
         if feed is None:
-            st.warning("Couldn't reach the score feed. Use the Check a game tab to type a score in.")
+            st.warning("Couldn't reach the score feed. Try again in a minute.")
             return []
     return feed["games"]
 
@@ -367,7 +367,7 @@ def tonight_html(games, st_by_id, target):
 def board_view():
     games = get_games_safe()
     if not games:
-        return st.info("No games found right now. Try the Check a game tab.")
+        return st.info("No games found right now. Check back closer to tip-off.")
     st_by_id = {g["id"]: game_state(g, target) for g in games}
     items = '<i>◆</i>'.join(f'{g["away"]} <b>{g["a"]}</b> – <b>{g["b"]}</b> {g["home"]}' for g in games)
     st.markdown(f'<div class="ticker"><div>{items}</div></div>', unsafe_allow_html=True)
@@ -395,38 +395,6 @@ def board_view():
                     unsafe_allow_html=True)
     if games:
         st.markdown(tonight_html(games, st_by_id, target), unsafe_allow_html=True)
-
-
-@st.fragment(run_every=15)
-def game_view():
-    games = get_games_safe()
-    st.markdown(feed_status_html(), unsafe_allow_html=True)
-    choice = st.selectbox("Pick a live game, or type your own", ["Type my own score"] + [g["label"] for g in games])
-    g = next((x for x in games if x["label"] == choice), None)
-    if g is None:
-        c1, c2 = st.columns(2)
-        a, b = c1.number_input("Team A score", 0, 200, 24), c2.number_input("Team B score", 0, 200, 30)
-        c3, c4 = st.columns(2)
-        q = c3.selectbox("Quarter", [1, 2, 3, 4], index=1)
-        mm = c4.number_input("Minutes left in quarter", 0.0, 12.0, 12.0, 0.5)
-        names = ("TEAM A", "TEAM B")
-    else:
-        a, b, names = g["a"], g["b"], (g["away"], g["home"])
-        if g["state"] == "post":
-            st.markdown(scoreboard(names[0], a, names[1], b, target), unsafe_allow_html=True)
-            return st.info("Game is over.")
-        if g["period"] > 4:
-            return st.info("Overtime: this model only covers regulation.")
-        q = max(g["period"], 1)
-        mm = (g["clock"] / 60) if g["state"] == "in" and g["clock"] is not None else 12.0
-    if a == b == target:
-        st.markdown(f'<div class="party">🎆 SCOREGASM! FINISHING TOGETHER AT {target}–{target} 🎆</div>', unsafe_allow_html=True)
-    st.markdown(scoreboard(names[0], a, names[1], b, target), unsafe_allow_html=True)
-    st.markdown(f'<div class="clock">Q{q} · {int(mm)}:{int((mm % 1) * 60):02d} LEFT</div>', unsafe_allow_html=True)
-    p = tp(a, b, round((4 - q) * 12 + mm, 2), target)
-    st.markdown(result_card(p, a, b, target), unsafe_allow_html=True)
-    st.markdown('<div class="small" style="margin-top:8px">CHUB METER = THE ODDS × HOW CLOSE THE SCORE IS TO 69–69. HIGHER = HOTTER.</div>',
-                unsafe_allow_html=True)
 
 
 GAP_LABEL = {1: "🥵 1 away · BLUE BALLS", 2: "😬 2 away · ALMOST, SWEETHEART", 3: "😮 3 away · THE THOUGHT COUNTS"}
@@ -569,26 +537,6 @@ TEAM_NAMES = {"ATL": "Atlanta Hawks", "BOS": "Boston Celtics", "BKN": "Brooklyn 
               "SAS": "San Antonio Spurs", "TOR": "Toronto Raptors", "UTA": "Utah Jazz", "WAS": "Washington Wizards"}
 
 
-def filter_games(g, team, season):
-    """Keep games involving one team (home or away) and/or from one season."""
-    if team and len(g):
-        g = g[(g.away == team) | (g.home == team)]
-    if season and len(g):
-        g = g[g.season.astype(str) == season]
-    return g
-
-
-def filter_bar(full, key):
-    """Team and season dropdowns. Returns (team or None, season or None)."""
-    c1, c2 = st.columns(2)
-    codes = sorted(set(full.away.dropna()) | set(full.home.dropna())) if len(full) and "away" in full else []
-    seasons = sorted(full.season.dropna().astype(str).unique(), reverse=True) if len(full) else []
-    team = c1.selectbox("Team", ["All teams"] + codes, key=f"{key}_team",
-                        format_func=lambda c: c if c == "All teams" else f"{c} · {TEAM_NAMES.get(c, c)}")
-    season = c2.selectbox("Season", ["All seasons"] + seasons, key=f"{key}_season")
-    return (None if team == "All teams" else team), (None if season == "All seasons" else season)
-
-
 def games_for(scope):
     """All-time = the archive (1996 on) plus every live-season game. Since launch = live-season games only."""
     season = load_csv("scoregasm_season.csv")
@@ -620,36 +568,6 @@ def games_for(scope):
     return df
 
 
-def list_view():
-    """Every scoregasm ever logged, newest first, 40 at a time."""
-    full = games_for("all")
-    hits = full[full.result == "scoregasm"] if len(full) else full
-    st.markdown(f'<div class="small" style="margin:2px 0 8px">📜 EVERY SCOREGASM, NEWEST FIRST · {len(hits):,} AND COUNTING</div>', unsafe_allow_html=True)
-    team, season = filter_bar(hits, "list")
-    hits = filter_games(hits, team, season)
-    if not len(hits):
-        return st.info("🪱 Nothing here yet. Try another team or season.")
-    for c in ("date",):
-        if c not in hits:
-            hits = hits.assign(**{c: ""})
-    hits = hits.assign(game_id=hits.game_id.astype(str), date=hits.date.fillna("").astype(str)).sort_values(
-        ["season", "date", "game_id"], ascending=False)
-    key = f"list_n_{team}_{season}"
-    n = st.session_state.get(key, 40)
-    cards = []
-    for _, r in hits.head(n).iterrows():
-        badge = tie_badge(r)
-        cards.append(f'<div class="sp"><div class="spt">{when_label(r.quarter, r.clock)} · {r.elapsed_min:.1f} MIN IN{" · " + badge if badge else ""}</div>'
-                     f'<div class="spg">{r.away} @ {r.home} · {when_of(r)}</div><div class="sph">{r.how}</div>'
-                     f'<div class="small">FINAL {final(r)}</div></div>')
-    st.markdown("".join(cards), unsafe_allow_html=True)
-    if len(hits) > n:
-        st.caption(f"Showing {n} of {len(hits):,}.")
-        if st.button("Show 40 more", key=f"more_{key}"):
-            st.session_state[key] = n + 40
-            st.rerun()
-
-
 def scope_bar(key, preseason=True):
     """All-time / since launch / preseason switch. Returns 'all', 'launch' or 'pre'."""
     opts = ["🌍 All-time", "🚀 Since launch (2026)"] + (["🧪 Preseason (testing)"] if preseason else [])
@@ -670,25 +588,15 @@ def log_view():
     st.markdown('<div class="small" style="margin:2px 0 8px">🏆 THE HALL OF FAME · WHERE THE LEGENDS GOT TIED</div>', unsafe_allow_html=True)
     scope = scope_bar("hof")
     full = games_for(scope)
-    team, season = filter_bar(full, "hof")
-    filtered = bool(team or season)
-    g = filter_games(full, team, season)
+    g = full
     hits = g[g.result == "scoregasm"]
-    ed = g[g.result == "edged"]
-    if filtered:                                             # older "no tie" games have no team names, so a game count would be wrong
-        c1, c2 = st.columns(2)
-        c1.metric("Scoregasms 69–69", f"{len(hits):,}")
-        c2.metric("Left hanging", f"{len(ed):,}")
-    else:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Games logged", f"{len(g):,}")
-        c2.metric("Scoregasms 69–69", f"{len(hits):,}")
-        c3.metric("Share of games", f"{len(hits) / len(g) * 100:.1f}%" if len(g) else "–", f"model at tip-off: {tp(0, 0, 48.0, 69) * 100:.1f}%",
-                  delta_color="off")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Games logged", f"{len(g):,}")
+    c2.metric("Scoregasms 69–69", f"{len(hits):,}")
+    c3.metric("Share of games", f"{len(hits) / len(g) * 100:.1f}%" if len(g) else "–", f"model at tip-off: {tp(0, 0, 48.0, 69) * 100:.1f}%",
+              delta_color="off")
     scope_notes(scope)
     if not len(hits):
-        if filtered:
-            return st.info("🪱 Nothing found. Try another team or season.")
         if scope == "pre":
             return st.info("🪱 No preseason games logged yet. Run: python3 update_log.py --preseason --since 2026-10-01")
         return st.info("🪱 Flaccid. Nothing here yet." + (" The first scoregasm of 2026–27 takes every record. Updated daily." if scope == "launch"
@@ -702,9 +610,7 @@ def hanging_view():
     st.markdown('<div class="small" style="margin:2px 0 8px">🥵 LEFT HANGING · SO CLOSE, NO TIE</div>', unsafe_allow_html=True)
     scope = scope_bar("hang")
     full = games_for(scope)
-    team, season = filter_bar(full, "hang")
-    ed = filter_games(full, team, season)
-    ed = ed[ed.result == "edged"] if len(ed) else ed
+    ed = full[full.result == "edged"] if len(full) else full
     scope_notes(scope)
     st.caption("LEFT HANGING: a team reached exactly 69, the other got within 3 points while it sat there, and the tie never happened.")
     if not len(ed):
@@ -736,16 +642,11 @@ def tease_view():
                  column_config={"Finish %": st.column_config.ProgressColumn("Finish %", min_value=0, max_value=100, format="%d%%")})
 
 
-tab_board, tab_game, tab_log, tab_list, tab_hang, tab_tease = st.tabs(
-    ["📺 Tonight", "🧮 Check a game", "🏆 Hall of Fame", "📜 Every scoregasm", "🥵 Left hanging", "😈 Tease board"])
+tab_board, tab_log, tab_hang, tab_tease = st.tabs(["📺 Tonight", "🏆 Hall of Fame", "🥵 Left hanging", "😈 Tease board"])
 with tab_board:
     board_view()
-with tab_game:
-    game_view()
 with tab_log:
     log_view()
-with tab_list:
-    list_view()
 with tab_hang:
     hanging_view()
 with tab_tease:
