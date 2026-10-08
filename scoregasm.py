@@ -537,19 +537,10 @@ TEAM_NAMES = {"ATL": "Atlanta Hawks", "BOS": "Boston Celtics", "BKN": "Brooklyn 
               "SAS": "San Antonio Spurs", "TOR": "Toronto Raptors", "UTA": "Utah Jazz", "WAS": "Washington Wizards"}
 
 
-def games_for(scope):
-    """All-time = the archive (1996 on) plus every live-season game. Since launch = live-season games only."""
+def games_for(scope="all"):
+    """Every game in the archive plus every live-season game."""
     season = load_csv("scoregasm_season.csv")
     season = season[season.date >= LAUNCH] if season is not None else None
-    if scope == "pre":                                          # preseason games, for testing only (never counted in the records)
-        pre = load_csv("scoregasm_preseason.csv")
-        if pre is None:
-            return pd.DataFrame(columns=["game_id", "result"])
-        return pre.assign(**{c: pre[c].replace(CODE_FIX) for c in ("away", "home", "tied_by", "first_to", "leader", "other") if c in pre})
-    if scope == "launch":
-        if season is None:
-            return pd.DataFrame(columns=["game_id", "result"])
-        return season.assign(**{c: season[c].replace(CODE_FIX) for c in ("away", "home", "tied_by", "first_to", "leader", "other") if c in season})
     frames = [f for f in (load_csv("scoregasm_archive.csv"), season) if f is not None]
     if not frames:
         return pd.DataFrame(columns=["game_id", "result"])
@@ -568,39 +559,14 @@ def games_for(scope):
     return df
 
 
-def scope_bar(key, preseason=True):
-    """All-time / since launch / preseason switch. Returns 'all', 'launch' or 'pre'."""
-    opts = ["🌍 All-time", "🚀 Since launch (2026)"] + (["🧪 Preseason (testing)"] if preseason else [])
-    pick = st.radio("Scope", opts, horizontal=True, label_visibility="collapsed", key=f"{key}_scope")
-    return "launch" if pick.startswith("🚀") else "pre" if pick.startswith("🧪") else "all"
-
-
-def scope_notes(scope):
-    if scope == "pre":
-        st.caption("PRESEASON TEST VIEW: these games are not in the records or the all-time view. Use it to check the logger is working before opening night.")
-    elif scope == "all":
-        st.caption("All-time = every game in the archive, plus this season. Older games show a season, not a date.")
-
-
 @st.fragment(run_every=60)
 def log_view():
     """Hall of Fame: the records."""
     st.markdown('<div class="small" style="margin:2px 0 8px">🏆 THE HALL OF FAME · WHERE THE LEGENDS GOT TIED</div>', unsafe_allow_html=True)
-    scope = scope_bar("hof")
-    full = games_for(scope)
-    g = full
-    hits = g[g.result == "scoregasm"]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Games logged", f"{len(g):,}")
-    c2.metric("Scoregasms 69–69", f"{len(hits):,}")
-    c3.metric("Share of games", f"{len(hits) / len(g) * 100:.1f}%" if len(g) else "–", f"model at tip-off: {tp(0, 0, 48.0, 69) * 100:.1f}%",
-              delta_color="off")
-    scope_notes(scope)
+    hits = games_for("all")
+    hits = hits[hits.result == "scoregasm"] if len(hits) else hits
     if not len(hits):
-        if scope == "pre":
-            return st.info("🪱 No preseason games logged yet. Run: python3 update_log.py --preseason --since 2026-10-01")
-        return st.info("🪱 Flaccid. Nothing here yet." + (" The first scoregasm of 2026–27 takes every record. Updated daily." if scope == "launch"
-                                           else " Build the archive with build_archive.py, then put scoregasm_archive.csv next to this app."))
+        return st.info("🪱 Nothing here yet.")
     st.markdown(record_cards(hits), unsafe_allow_html=True)
 
 
@@ -608,10 +574,8 @@ def log_view():
 def hanging_view():
     """Left hanging: games where a team sat on 69 and the tie never came."""
     st.markdown('<div class="small" style="margin:2px 0 8px">🥵 LEFT HANGING · SO CLOSE, NO TIE</div>', unsafe_allow_html=True)
-    scope = scope_bar("hang")
-    full = games_for(scope)
+    full = games_for("all")
     ed = full[full.result == "edged"] if len(full) else full
-    scope_notes(scope)
     st.caption("LEFT HANGING: a team reached exactly 69, the other got within 3 points while it sat there, and the tie never happened.")
     if not len(ed):
         return st.info("Nobody left hanging yet.")
@@ -629,10 +593,9 @@ def hanging_view():
 def tease_view():
     """Team tease board: who finishes and who doesn't."""
     st.markdown('<div class="small" style="margin:2px 0 8px">😈 TEAM TEASE BOARD · WHO FINISHES, WHO DOESN\'T</div>', unsafe_allow_html=True)
-    scope = scope_bar("tease", preseason=False)
-    full = games_for(scope)
+    full = games_for("all")
     st.caption("Every team ranked by how often their 69-69 chances actually finish. Left hanging = so close, but no tie.")
-    allt, ranked = tease_board(full, 8 if scope == "all" else 2)
+    allt, ranked = tease_board(full, 8)
     if not len(allt):
         return st.info("No teams to rank yet.")
     st.markdown(tease_cards(ranked), unsafe_allow_html=True)
