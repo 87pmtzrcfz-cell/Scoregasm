@@ -363,8 +363,18 @@ def tonight_html(games, st_by_id, target):
     return "".join(out)
 
 
+def intro(title, what, points):
+    """Plain-English intro at the top of a tab: what this page is, then 2-3 things to look for."""
+    lis = "".join(f"<div style='margin-top:5px'>{p}</div>" for p in points)
+    st.markdown(f'<div class="blurb" style="padding:10px 14px;margin:2px 0 12px"><div class="hd">{title}</div>{what}{lis}</div>', unsafe_allow_html=True)
+
+
 @st.fragment(run_every=15)  # re-checks the feed every 15 seconds
 def board_view():
+    intro("📺 TONIGHT", "Every NBA game on tonight, with the odds that it hits <b>exactly 69–69</b> at some point. Updates by itself every few seconds.",
+          ["🎆 <b>Chub meter</b> (the big number, 0–100): how worked up the hottest game is. Higher = closer to a 69–69.",
+           "📈 <b>The percent</b>: the actual chance this game passes through 69–69, from the score right now.",
+           "📋 <b>Game list</b>: every game tonight, hottest first. Finished games show 🎆 if they went 69–69."])
     games = get_games_safe()
     if not games:
         return st.info("No games found right now. Check back closer to tip-off.")
@@ -560,7 +570,11 @@ def games_for(scope="all"):
 @st.fragment(run_every=60)
 def log_view():
     """Hall of Fame: the records."""
-    st.markdown('<div class="small" style="margin:2px 0 8px">🏆 THE HALL OF FAME · WHERE THE LEGENDS GOT TIED</div>', unsafe_allow_html=True)
+    intro("🏆 HALL OF FAME", "The wildest games that ever went <b>exactly 69–69</b> (since 2015), ranked by record.",
+          ["⏰ <b>Earliest</b>: tied at 69 with the least time played. Fastest finish ever.",
+           "🌙 <b>Latest</b>: tied at 69 deep into the game. A slow burn.",
+           "🧟 <b>Back from the dead</b>: the team that dug out of the biggest hole to get there, and whether they won.",
+           "⏱️ <b>Tie held</b> = how long the score stayed 69–69 before someone scored."])
     hits = games_for("all")
     hits = hits[hits.result == "scoregasm"] if len(hits) else hits
     if not len(hits):
@@ -571,17 +585,14 @@ def log_view():
 @st.fragment(run_every=60)
 def tease_view():
     """Leaderboards: who finishes and who just teases."""
-    st.markdown('<div class="small" style="margin:2px 0 8px">😈 THE TEASE BOARD · WHO FINISHES, WHO JUST TEASES</div>', unsafe_allow_html=True)
     allt, ranked, league = tease_board(games_for("all"), 8)
     if not len(allt):
         return st.info("No teams to rank yet.")
-    st.markdown(
-        '<div class="blurb" style="padding:8px 14px;margin:6px 0 4px"><b>THE RULES</b><br>'
-        '🔥 <b>A chance</b> = one team hits 69 and the other is within 3.<br>'
-        '🎆 <b>Scoregasm</b> = the other team gets there. 69–69.<br>'
-        '😈 <b>Tease</b> = they never do. Left hanging.<br>'
-        '<span class="small">Percent = scoregasms ÷ chances. Needs 8+ chances to make the percent boards. '
-        f'League average: {league * 100:.0f}%.</span></div>', unsafe_allow_html=True)
+    intro("😈 TEASE BOARD", "Which teams actually finish a 69–69, and which ones just tease. Three leaderboards, top 5 each.",
+          ["🔥 <b>A chance</b>: one team hits 69 while the other is within 3 points.",
+           "🎆 <b>Scoregasm</b>: the other team gets there. 69–69. It finished.",
+           "😈 <b>Tease</b>: they never get there. Left hanging.",
+           f"📊 <b>The percent</b>: scoregasms ÷ chances (league average {league * 100:.0f}%). Needs 8+ chances to count."])
     st.markdown(tease_boards(allt, ranked), unsafe_allow_html=True)
 
 
