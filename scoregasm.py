@@ -229,7 +229,7 @@ button[data-baseweb="tab"] p{font-weight:500;letter-spacing:.14em;font-size:.72r
 .logo{animation:flick 7s infinite,hue 8s ease-in-out infinite}
 @keyframes flick{0%,17%,19%,21%,61%,63%,100%{opacity:1}18%,20%,62%{opacity:.55}}
 @keyframes hue{0%,100%{text-shadow:0 0 4px #ff2e97,0 0 14px #ff2e97,0 0 34px rgba(255,46,151,.7),0 0 60px rgba(25,227,216,.28)}50%{text-shadow:0 0 4px #19e3d8,0 0 14px #19e3d8,0 0 34px rgba(25,227,216,.7),0 0 60px rgba(255,46,151,.28)}}
-.tag::after{content:"\25AE";margin-left:6px;color:var(--teal);animation:cursor 1s steps(1) infinite}
+.tag::after{content:"▮";margin-left:6px;color:var(--teal);animation:cursor 1s steps(1) infinite}
 @keyframes cursor{50%{opacity:0}}
 .rn,.team .sc{animation:glitch 6s infinite}
 @keyframes glitch{0%,93%,100%{transform:none}94%{transform:translateX(-2px);text-shadow:2px 0 #19e3d8,-2px 0 #ff2e97}96%{transform:translateX(2px);text-shadow:-2px 0 #19e3d8,2px 0 #ff2e97}98%{transform:none}}
@@ -244,6 +244,53 @@ button[data-baseweb="tab"] p{font-weight:500;letter-spacing:.14em;font-size:.72r
 .dot{animation:blink 1s steps(2) infinite}
 .sp,.grow,.card{transition:box-shadow .25s,border-color .25s}
 .sp:hover,.grow:hover{border-color:var(--teal);box-shadow:0 0 20px rgba(25,227,216,.35)}
+/* ===== polish: calmer motion, rounder cards, one consistent spacing system ===== */
+.block-container{max-width:780px;padding-top:2rem;padding-bottom:3rem}
+.stApp::before{opacity:.18}
+.stApp::after{display:none}
+.rn,.team .sc{animation:glitch 14s infinite}
+div[data-baseweb="tab-list"]{gap:2px;border-bottom:1px solid rgba(255,255,255,.08);margin:4px 0 18px;overflow-x:auto}
+div[data-baseweb="tab-border"]{display:none}
+div[data-baseweb="tab-highlight"]{background:linear-gradient(90deg,var(--red),var(--teal))!important;height:2px!important}
+button[data-baseweb="tab"]{background:transparent!important;padding:10px 14px!important}
+button[data-baseweb="tab"] p{color:var(--mute);font-size:.68rem!important;letter-spacing:.16em}
+button[data-baseweb="tab"][aria-selected="true"] p{color:var(--hot);text-shadow:0 0 10px rgba(255,46,151,.55)}
+.grow,.sp,.recap,.blurb,.card{border-radius:14px;border-color:rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))}
+.sp.HOF{border-color:rgba(255,46,151,.28);box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.card{border-color:rgba(255,46,151,.25);box-shadow:0 20px 50px rgba(0,0,0,.5),0 0 40px rgba(255,46,151,.12)}
+.seg{border-radius:10px}.pill,.alert,.party,.warn{border-radius:999px}
+.ticker{border-color:rgba(255,255,255,.08);border-radius:10px;padding:9px 12px}
+.sp:hover,.grow:hover{border-color:rgba(25,227,216,.45);box-shadow:0 0 22px rgba(25,227,216,.18)}
+.intro{padding:18px 20px 8px;margin:0 0 18px;border:1px solid rgba(255,255,255,.08);border-radius:16px;background:linear-gradient(180deg,rgba(255,46,151,.06),rgba(255,255,255,.01) 60%)}
+.intro .ttl{font-family:'Audiowide',sans-serif;font-size:1.3rem;letter-spacing:.06em;color:var(--hot);text-shadow:0 0 12px rgba(255,46,151,.5)}
+.intro .lead{color:#d8d2e6;font-size:.95rem;line-height:1.6;font-weight:300;margin:6px 0 10px}
+.intro .lead b,.intro .pt b{color:#fff;font-weight:500}
+.intro .pt{padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:.86rem;color:#c9c2d8;line-height:1.55}
+.sec{font-size:.62rem;letter-spacing:.3em;color:var(--teal);font-weight:500;margin:26px 0 10px;text-shadow:0 0 8px rgba(25,227,216,.4)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:4px 0 6px}
+.kpi{padding:14px 16px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}
+.kpi .k{font-size:.56rem;letter-spacing:.24em;color:var(--mute);font-weight:500}
+.kpi .v{font-family:'Audiowide',sans-serif;font-size:1.75rem;color:var(--hot);line-height:1.15;margin-top:4px}
+.kpi .s{font-size:.74rem;color:#a9a3bb;margin-top:2px;line-height:1.4}
+.kpi.good .v{color:#d6fffb;text-shadow:0 0 12px rgba(25,227,216,.6)}
+.srow{display:grid;grid-template-columns:62px 1fr 92px;align-items:center;gap:10px;margin:7px 0;font-size:.78rem;color:#d8d2e6}
+.srow .yr{font-family:'JetBrains Mono',monospace;color:var(--mute)}
+.srow .val{text-align:right;font-family:'JetBrains Mono',monospace}
+.track{position:relative;height:10px;border-radius:99px;background:rgba(255,255,255,.05)}
+.track i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,var(--red),#b46bff);box-shadow:0 0 10px rgba(255,46,151,.5)}
+.track u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--teal);box-shadow:0 0 8px var(--teal)}
+.legend{font-size:.7rem;color:var(--mute);margin:2px 0 4px}.legend span{display:inline-block;width:10px;height:10px;border-radius:3px;margin:0 6px -1px 12px}
+.steps{counter-reset:s;margin:0;padding:0}
+.step{position:relative;padding:12px 14px 12px 50px;margin:8px 0;border:1px solid rgba(255,255,255,.07);border-radius:14px;background:rgba(255,255,255,.015);font-size:.86rem;line-height:1.55;color:#c9c2d8}
+.step::before{counter-increment:s;content:counter(s);position:absolute;left:14px;top:12px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-family:'Audiowide',sans-serif;font-size:.75rem;color:#000;background:linear-gradient(135deg,var(--red),var(--teal))}
+.step b{color:#fff;font-weight:500}
+.cmp{padding:12px 16px;margin:8px 0;border:1px solid rgba(255,255,255,.07);border-radius:14px;background:rgba(255,255,255,.015)}
+.cmp .t{font-size:.84rem;color:#fff;margin-bottom:8px}.cmp .n{font-size:.72rem;color:var(--mute);margin-top:6px;line-height:1.5}
+.cmp .r{display:grid;grid-template-columns:70px 1fr 56px;gap:10px;align-items:center;font-size:.72rem;color:var(--mute);margin:4px 0}
+.cmp .r b{text-align:right;font-family:'JetBrains Mono',monospace;color:#fff;font-weight:400}
+.cmp .r .track i.m{background:linear-gradient(90deg,#19e3d8,#7ef3ec);box-shadow:0 0 10px rgba(25,227,216,.5)}
+.prose{font-size:.88rem;line-height:1.65;color:#c9c2d8}.prose b{color:#fff;font-weight:500}
+@media (max-width:520px){.srow{grid-template-columns:52px 1fr 80px}.intro{padding:16px 16px 6px}}
 @media (prefers-reduced-motion:reduce){.stApp::after,.stApp::before{display:none}*{animation:none!important;transition:none!important}}
 </style>
 """
@@ -254,7 +301,6 @@ st.markdown('<div class="logo">SCOREGASM</div><div class="tag">the odds of finis
 st.markdown('<div style="text-align:center;color:#8f8aa3;font-size:.95rem;letter-spacing:.08em;font-weight:300;margin:2px 0 18px">'
             'Two teams. One number. <b style="color:#fff">69–69.</b> Not 70, not 68.</div>', unsafe_allow_html=True)
 target = 69   # Scoregasm is about one number
-st.markdown('<div class="small" style="margin:2px 0 6px">CHANCE A GAME IS EVER TIED AT EXACTLY 69–69</div>', unsafe_allow_html=True)
 
 
 def get_games_safe():
@@ -364,9 +410,9 @@ def tonight_html(games, st_by_id, target):
 
 
 def intro(title, what, points):
-    """Plain-English intro at the top of a tab: what this page is, then 2-3 things to look for."""
-    lis = "".join(f"<div style='margin-top:5px'>{p}</div>" for p in points)
-    st.markdown(f'<div class="blurb" style="padding:10px 14px;margin:2px 0 12px"><div class="hd">{title}</div>{what}{lis}</div>', unsafe_allow_html=True)
+    """Intro box at the top of a tab: a title, one plain sentence, then one line per thing to know."""
+    pts = "".join(f'<div class="pt">{p}</div>' for p in points)
+    st.markdown(f'<div class="intro"><div class="ttl">{title}</div><div class="lead">{what}</div>{pts}</div>', unsafe_allow_html=True)
 
 
 @st.fragment(run_every=15)  # re-checks the feed every 15 seconds
@@ -453,7 +499,7 @@ def when_of(r):
 RECORDS = [
     ("⏰ PREMATURE · EARLIEST SCOREGASM", "elapsed_min", False, lambda r: f"{when_label(r.quarter, r.clock)}, {r.elapsed_min:.1f} minutes in"),
     ("🌙 LATE BLOOMER · LATEST SCOREGASM", "elapsed_min", True, lambda r: f"{when_label(r.quarter, r.clock)}, {r.elapsed_min:.1f} minutes in"),
-    ("🧟 BACK FROM THE DEAD (WILD CARD)", "max_deficit", True, comeback_title),
+    ("🍑 COMING FROM BEHIND", "max_deficit", True, comeback_title),
 ]
 MEDAL = ["🥇", "🥈", "🥉"]
 
@@ -573,7 +619,7 @@ def log_view():
     intro("🏆 HALL OF FAME", "The wildest games that ever went <b>exactly 69–69</b> (since 2015), ranked by record.",
           ["⏰ <b>Earliest</b>: tied at 69 with the least time played. Fastest finish ever.",
            "🌙 <b>Latest</b>: tied at 69 deep into the game. A slow burn.",
-           "🧟 <b>Back from the dead</b>: the team that dug out of the biggest hole to get there, and whether they won.",
+           "🍑 <b>Coming from behind</b>: the team that dug out of the biggest hole to get there, and whether they won.",
            "⏱️ <b>Tie held</b> = how long the score stayed 69–69 before someone scored."])
     hits = games_for("all")
     hits = hits[hits.result == "scoregasm"] if len(hits) else hits
@@ -589,42 +635,121 @@ def tease_view():
     if not len(allt):
         return st.info("No teams to rank yet.")
     intro("😈 TEASE BOARD", "Which teams actually finish a 69–69, and which ones just tease. Three leaderboards, top 5 each.",
-          ["🔥 <b>A chance</b>: one team hits 69 while the other is within 3 points.",
-           "🎆 <b>Scoregasm</b>: the other team gets there. 69–69. It finished.",
-           "😈 <b>Tease</b>: they never get there. Left hanging.",
-           f"📊 <b>The percent</b>: scoregasms ÷ chances (league average {league * 100:.0f}%). Needs 8+ chances to count."])
+          ["🔥 <b>A chance</b>: a team reaches exactly 69 points while the other team is within 3 points of it (66, 67 or 68). "
+           "Either side could tie it with one more bucket or free throw, so the tie was right there.",
+           "🎆 <b>Scoregasm</b>: the chance pays off. The trailing team gets to 69 too and the game is tied 69–69. It finished.",
+           "😈 <b>Tease</b>: the chance doesn't pay off. The trailing team never lands on 69 (it jumps past it, or the leader scores again). Left hanging.",
+           f"📊 <b>The percent</b>: scoregasms ÷ chances, so 40% means 4 of every 10 chances finished. League average: {league * 100:.0f}%. "
+           "A team needs 8+ chances to make the percent boards."])
     st.markdown(tease_boards(allt, ranked), unsafe_allow_html=True)
 
 
-tab_board, tab_log, tab_tease = st.tabs(["📺 Tonight", "🏆 Hall of Fame", "😈 Tease board"])
+def kpi(label, value, sub, good=False):
+    return f'<div class="kpi{" good" if good else ""}"><div class="k">{label}</div><div class="v">{value}</div><div class="s">{sub}</div></div>'
+
+
+def compare_html(title, rows, note):
+    """Predicted vs actual as two bars on the same scale."""
+    top = max(v for _, v, _ in rows) * 1.25
+    bars = "".join(f'<div class="r">{lab}<div class="track"><i class="{c}" style="width:{v / top * 100:.0f}%"></i></div><b>{v:.2f}%</b></div>'
+                   for lab, v, c in rows)
+    return f'<div class="cmp"><div class="t">{title}</div>{bars}<div class="n">{note}</div></div>'
+
+
+@st.fragment(run_every=300)
+def stats_view():
+    """How the odds were tested, with the tip-off check recomputed from the data files every time."""
+    model = tp(0, 0, 48.0, target) * 100
+    full = games_for("all")
+    reg = full[full.game_type.fillna("regular") == "regular"] if "game_type" in full else full
+    intro("📊 THE STATS", "How we know the odds on this site are honest. The model was graded against "
+          "<b>every real NBA game we could get play-by-play for</b>, and the toughest test used seasons it had never seen.",
+          ["🎯 <b>Predicted</b>: what the model said would happen, before it saw how the games ended.",
+           "🏀 <b>Actual</b>: what really happened, counted from every scoring play of every game.",
+           "🔒 <b>Unseen seasons</b>: games kept locked away while the model was built, then used once as a final exam. "
+           "If a model only works on games it was tuned on, this is where it gets caught.",
+           "🎲 <b>Normal luck</b>: even a perfect model won't match exactly. The range shows how far off pure chance could push it."])
+    if not len(reg):
+        return st.info("No games to check yet.")
+    n, k = len(reg), int((reg.result == "scoregasm").sum())
+    real = k / n * 100
+    exp, sd = n * model / 100, math.sqrt(n * model / 100 * (1 - model / 100))
+    lo, hi = (exp - 2 * sd) / n * 100, (exp + 2 * sd) / n * 100
+    inside = lo <= real <= hi
+    st.markdown('<div class="sec">THE HEADLINE CHECK · AT TIP-OFF</div>', unsafe_allow_html=True)
+    st.markdown('<div class="kpis">'
+                + kpi("GAMES CHECKED", f"{n:,}", f"Regular season, {reg.season.min()} to {reg.season.max()}")
+                + kpi("MODEL SAYS", f"{model:.1f}%", "Chance a game passes through 69–69, before tip-off")
+                + kpi("REALITY", f"{real:.1f}%", f"{k:,} games actually went 69–69")
+                + kpi("VERDICT", "PASS" if inside else "CLOSE", f"Normal luck range: {lo:.1f}% to {hi:.1f}%"
+                      + ("" if inside else ". Reality sits just outside it; see below."), good=inside)
+                + '</div>', unsafe_allow_html=True)
+
+    by = reg.groupby("season").result.agg(n="size", k=lambda r: int((r == "scoregasm").sum())).reset_index()
+    by = by[by.n >= 300]
+    if len(by):
+        scale = max(6.0, (by.k / by.n * 100).max() * 1.15)
+        rows = "".join(f'<div class="srow"><div class="yr">{r.season}</div><div class="track"><i style="width:{r.k / r.n * 100 / scale * 100:.1f}%"></i>'
+                       f'<u style="left:{model / scale * 100:.1f}%"></u></div><div class="val">{r.k / r.n * 100:.1f}% · {r.k}</div></div>'
+                       for r in by.itertuples())
+        st.markdown('<div class="sec">SEASON BY SEASON</div><div class="legend"><span style="background:#ff2e97;margin-left:0"></span>'
+                    f'share of games that went 69–69<span style="background:#19e3d8"></span>model ({model:.1f}%)</div>' + rows
+                    + '<div class="legend" style="margin-top:8px">One season has about 1,230 games, so a single season can swing by about ±1 point from luck alone.</div>',
+                    unsafe_allow_html=True)
+
+    st.markdown('<div class="sec">THE LIVE CHECK · DURING GAMES</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="prose">The tip-off number is only one forecast per game. The live odds change with every basket, so they were tested '
+        'by replaying old games moment by moment. At each moment the model only saw the score and the clock, then we checked whether '
+        'that game really went on to hit 69–69.</div>'
+        + compare_html("🔒 Final exam: 2015–18 (seasons the model never saw)", [("Predicted", 2.07, "m"), ("Actual", 2.02, "")],
+                       "1.78 million live forecasts. Off by 0.05 points overall.")
+        + compare_html("When the model said about 3%", [("Predicted", 3.0, "m"), ("Actual", 3.1, "")],
+                       "2018–21 games: 9,272 hits out of 296,350 forecasts.")
+        + compare_html("When the model said about 5%", [("Predicted", 5.0, "m"), ("Actual", 5.3, "")],
+                       "Same games. Forecasts between about 2% and 16% landed close to reality."),
+        unsafe_allow_html=True)
+
+    st.markdown('<div class="sec">HOW IT WAS TESTED · STEP BY STEP</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="steps">'
+        '<div class="step"><b>Build the model from how basketball scores.</b> Every possession ends in 0, 1, 2 or 3 points '
+        '(free throws and and-ones included) at league-average rates. The model plays out the rest of the game one possession at a time '
+        'and adds up every path that lands on exactly 69–69. One small tweak, that the team behind scores slightly faster, was tuned on 2018–21 games.</div>'
+        '<div class="step"><b>Collect real games.</b> Every scoring play from every regular-season game, 2015–16 through 2024–25, from public '
+        'play-by-play records. A script replays each game and notes whether it ever sat at 69–69.</div>'
+        '<div class="step"><b>Check the tip-off odds.</b> Compare the model\'s pregame number with how often games really went 69–69 (the headline check above).</div>'
+        '<div class="step"><b>Check the live odds on unseen seasons.</b> Replay games moment by moment and compare forecasts with outcomes, '
+        'grouped by forecast size. The final exam used 2015–18, which played no part in building the model.</div>'
+        '<div class="step"><b>Try to beat it.</b> We tested fancier versions: updating to each season\'s scoring averages, a late-season effect, team '
+        'strength, and a pure lookup table built from real games. None did better on unseen seasons, so the simple model stayed.</div>'
+        '<div class="step"><b>Write predictions down first.</b> Every new theory gets a written prediction <i>before</i> looking at the data, '
+        'so a lucky pattern can\'t sneak in after the fact.</div>'
+        '</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="sec">WHAT IT DOESN\'T KNOW</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="prose">The model treats both teams as league average. It ignores team strength, injuries, rest and the betting spread '
+        '(we tested strength and spread-style ratings and found no real gain). Overtime isn\'t modeled, only regulation. '
+        'And recent seasons (2020–25) came in a bit under the model, about 3.1% versus 3.6%. That gap has roughly a 6% chance of being '
+        'pure luck; none of the explanations we tested held up, so it stays an open question.</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="sec">ABOUT THE CHUB METER</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="prose">The chub meter is a display scale, not a probability. It puts the odds on a log scale (1% ≈ 37, 3% ≈ 55, '
+        '10% ≈ 74, 30% ≈ 92) and multiplies by how far the score has traveled toward 69. That\'s why 10–10 sits low even when the odds '
+        'look similar, and why the meter climbs as both teams close in.<br>'
+        '🪱 Limp 0 · 👀 Peeping 20 · 🌭 Half chub 40 · 🔥 Close 60 · 🎆 Scoregasm 80</div>', unsafe_allow_html=True)
+
+
+tab_board, tab_log, tab_tease, tab_stats = st.tabs(["📺 Tonight", "🏆 Hall of Fame", "😈 Tease board", "📊 Stats"])
 with tab_board:
     board_view()
 with tab_log:
     log_view()
 with tab_tease:
     tease_view()
+with tab_stats:
+    stats_view()
 
-with st.expander("Show me the math (be gentle)"):
-    st.markdown(
-        "**The odds.** The model plays out the rest of the game one possession at a time, thousands of ways, and counts how "
-        "often it lands on exactly the target tie (free-throw trips included, since a team can sit on the number mid-trip). "
-        "The team that's behind scores a touch faster and the leader a touch slower, like real games.\n\n"
-        "**The Chub meter** is a display scale, not a probability: the odds on a log scale (1% is about 37, 3% about 55, "
-        "10% about 74, 30% about 92), multiplied by how far the game is along the road to the target. That's why 10-10 "
-        "sits near the bottom even though the odds look similar, and why the meter climbs as the score heads toward 69. "
-        "🪱 Limp 0 · 👀 Peeping 20 · 🌭 Half chub 40 · 🔥 Close 60 · 🎆 Scoregasm 80.\n\n"
-        "**Accuracy.** Two checks on real games, 12,805 of them from 2015-16 through 2024-25.\n\n"
-        "*Start of the game:* the model says a game has a 3.6% chance of passing through 69–69. In real life it happened "
-        "422 times in 12,805 games, or 3.3%. From 2015 to 2020 it was 3.5%, and from 2020 to 2025 it was 3.1%, a bit "
-        "under the model. The gap could be luck (about a 6% chance of that) or a real shift in how the league plays. "
-        "We tested several explanations and none held up, so it stays a mystery.\n\n"
-        "*During the game:* I replayed games moment by moment, with the model using only the score and clock at that "
-        "moment. On 2018-21 games, forecasts of about 3% hit 3.1% of the time (9,272 of 296,350) and 5% forecasts hit "
-        "5.3%. Then I tested it on 2015-18, three seasons it had never seen, across 1.78 million forecasts: predicted "
-        "2.07% overall, actual 2.02%. Odds from about 2% to 16% were accurate. Very low odds (under 2%) ran a bit high on "
-        "those older seasons, and odds above 15% are noisy because there are few of them. A single forecast is never "
-        "right or wrong, only the pooled record can be judged. The same game appears in many forecasts.\n\n"
-        "*Not in the model:* team strength, injuries, rest, and the point spread. We tested team strength and spread-like "
-        "ratings and found no measurable gain.")
-st.markdown('<div class="foot">Checked against 12,805 real NBA games (2015–25): 69–69 happens in about 3.3% of games, '
-            'the model says 3.6%. Regulation only. Just for fun, not betting advice.</div>', unsafe_allow_html=True)
+st.markdown('<div class="foot">SCOREGASM · Live scores from ESPN · Regulation only · Just for fun, not betting advice</div>', unsafe_allow_html=True)
