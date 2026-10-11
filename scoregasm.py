@@ -296,7 +296,7 @@ def recap_html(games):
     if n:
         hits, near = int((logged.result == "scoregasm").sum()), int((logged.result == "edged").sum())
         parts.append(f"🎆 {hits} scoregasm{'s' if hits != 1 else ''}" if hits else "no scoregasms")
-        parts.append(f"🥵 {near} left hanging")
+        parts.append(f"🥵 {near} near misses")
         if n < len(done):
             parts.append(f"{len(done) - n} still being logged")
     else:
@@ -397,10 +397,6 @@ def board_view():
         st.markdown(tonight_html(games, st_by_id, target), unsafe_allow_html=True)
 
 
-GAP_LABEL = {1: "🥵 1 away · BLUE BALLS", 2: "😬 2 away · ALMOST, SWEETHEART", 3: "😮 3 away · THE THOUGHT COUNTS"}
-ENDED = {"overshot": "jumped over it", "pulled away": "leader scored again", "end of regulation": "regulation ended"}
-
-
 @st.cache_data(ttl=300)
 def load_csv(name):
     path = os.path.join(HERE, name)
@@ -478,53 +474,55 @@ def record_cards(sp, n=3):
     return "".join(out)
 
 
-def scoregasm_table(sp):
-    t = sp.assign(game_id=sp.game_id.astype(str)).sort_values(["season", "game_id"], ascending=False)
-    return pd.DataFrame({"When": [when_of(r) for r in t.itertuples()], "Game": t.away + " @ " + t.home,
-                         "Hit at": [when_label(q, c) for q, c in zip(t.quarter, t.clock)],
-                         "Comeback": t.max_deficit.astype(int), "Tie held": [tie_badge(r).replace("TIE HELD ", "") for r in t.itertuples()], "Story": t.how, "Final": [final(r) for r in t.itertuples()]})
-
-
-def tease_board(full, min_events):
-    """Per team: scoregasms and edged games they were in. Finish rate = scoregasms / (scoregasms + edged)."""
-    rows = []
+def tease_board(full, min_chances):
+    """Per team: a 'chance' is a game where one side sat on exactly 69 and the other got within 3 points.
+    Scoregasm = the chance became a 69-69 tie. Near miss = it didn't. Conversion = scoregasms / chances."""
     if not len(full) or "away" not in full:
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), 0.0
+    rows = []
     for t in sorted(set(full.away.dropna()) | set(full.home.dropna())):
         mine = full[(full.away == t) | (full.home == t)]
-        sg, ed = int((mine.result == "scoregasm").sum()), int((mine.result == "edged").sum())
-        if sg + ed:
-            rows.append({"Team": f"{t} · {TEAM_NAMES.get(t, t)}", "code": t, "Scoregasms": sg, "Edged": ed, "Finish rate": sg / (sg + ed)})
+        sg, nm = int((mine.result == "scoregasm").sum()), int((mine.result == "edged").sum())
+        if sg + nm:
+            rows.append({"Team": f"{t} · {TEAM_NAMES.get(t, t)}", "Chances": sg + nm, "Scoregasms": sg, "Near misses": nm, "Conversion": sg / (sg + nm)})
     df = pd.DataFrame(rows)
-    return df, (df[df.Scoregasms + df.Edged >= min_events] if len(df) else df)
+    sg_all, nm_all = int((full.result == "scoregasm").sum()), int((full.result == "edged").sum())
+    league = sg_all / (sg_all + nm_all) if sg_all + nm_all else 0.0
+    return df, (df[df.Chances >= min_chances] if len(df) else df), league
 
 
-def tease_cards(ranked):
-    if not len(ranked):
-        return ""
-    tease, closer = ranked.sort_values("Finish rate").iloc[0], ranked.sort_values("Finish rate", ascending=False).iloc[0]
-    card = lambda k, head, line, r: (f'<div class="sp HOF"><div class="spt">{head}</div><div class="spg">{r.Team}</div>'
-                                     f'<div class="sph">{line}</div><div class="small">{int(r.Scoregasms)} scoregasms · {int(r.Edged)} edged · finishes {r["Finish rate"] * 100:.0f}% of the time</div></div>')
-    return (card(0, "😈 THE LEAGUE\'S BIGGEST TEASE", "Keeps getting right to the edge. Rarely closes.", tease)
-            + card(1, "🎯 THE CLOSER", "Gets there and finishes. Reliable.", closer))
-
-
-def edged_cards_html(ed, target, n=3):
-    """The closest calls: smallest gap, then the longest tease."""
-    out = []
-    for _, r in ed.sort_values(["closest_gap", "wait_sec"], ascending=[True, False]).head(n).iterrows():
-        out.append(f'<div class="sp EDGED"><div class="spt">💔 {GAP_LABEL[int(r.closest_gap)].upper()} · SAT ON {target} FOR {mmss(r.wait_sec)}</div>'
-                   f'<div class="spg">{r.away} @ {r.home} · {when_of(r)}</div><div class="sph">{r.how}</div>'
-                   f'<div class="small">FINAL {final(r)}</div></div>')
+def leaderboard_html(title, sub, rows, flame):
+    """rows: list of (team label, big value text, bar fraction 0-1, small note). First row glows."""
+    out = [f'<div class="sp HOF" style="margin-top:14px"><div class="spt">{title}</div><div class="small" style="margin:2px 0 10px">{sub}</div>']
+    for k, (team, val, frac, note) in enumerate(rows):
+        glow = "text-shadow:var(--glow)" if k == 0 else "opacity:.88"
+        out.append(
+            f'<div style="display:flex;align-items:center;gap:10px;margin:9px 0">'
+            f'<div style="font-family:Audiowide,sans-serif;font-size:1.1rem;width:26px;color:var(--teal)">{k + 1 if k else flame}</div>'
+            f'<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'
+            f'<span style="font-family:Audiowide,sans-serif;font-size:1rem;letter-spacing:.04em;color:var(--hot);{glow}">{team}</span>'
+            f'<span style="font-family:Audiowide,sans-serif;font-size:1.15rem;color:var(--hot);{glow}">{val}</span></div>'
+            f'<div style="height:5px;margin:4px 0 3px;background:rgba(255,46,151,.14)"><div style="height:5px;width:{max(frac, .03) * 100:.0f}%;'
+            f'background:linear-gradient(90deg,var(--red),var(--teal));box-shadow:0 0 10px rgba(255,46,151,.7)"></div></div>'
+            f'<div class="small">{note}</div></div></div>')
+    out.append("</div>")
     return "".join(out)
 
 
-def edged_table(ed, target, max_gap=3):
-    t = ed[ed.closest_gap <= max_gap].assign(game_id=lambda d: d.game_id.astype(str)).sort_values(["season", "game_id"], ascending=False)
-    return pd.DataFrame({
-        "When": [when_of(r) for r in t.itertuples()], "Game": t.away + " @ " + t.home, "Close": t.closest_gap.astype(int).map(GAP_LABEL), f"Sat on {target}": t.leader,
-        "Other got to": t.closest_score.astype(int), "Waited": t.wait_sec.map(mmss), "Ended": t.ending.map(ENDED), "Story": t.how,
-        "Final": [final(r) for r in t.itertuples()]})
+def tease_boards(allt, ranked, n=5):
+    """Three leaderboards: most scoregasms, best conversion (closers), worst conversion (teases)."""
+    short = lambda t: t.split(" · ")[0]
+    most = allt.sort_values(["Scoregasms", "Conversion"], ascending=False).head(n)
+    top = max(int(most.Scoregasms.iloc[0]), 1)
+    html = leaderboard_html("🎆 MOST SCOREGASMS", "Who has been in the most 69–69s",
+                            [(short(r.Team), f"{int(r.Scoregasms)}", r.Scoregasms / top, f"{r.Team.split(' · ')[1]}") for r in most.itertuples()], "🎆")
+    if len(ranked) >= 2:
+        best = ranked.sort_values(["Conversion", "Chances"], ascending=False).head(n)
+        worst = ranked.sort_values(["Conversion", "Chances"], ascending=[True, False]).head(n)
+        mk = lambda d: [(short(r.Team), f"{r.Conversion * 100:.0f}%", r.Conversion, f"{int(r.Scoregasms)} of {int(r.Chances)} chances") for r in d.itertuples()]
+        html += leaderboard_html("🎯 THE CLOSERS", "Gets close, then finishes", mk(best), "🎯")
+        html += leaderboard_html("😈 THE TEASES", "Gets close, then leaves you hanging", mk(worst), "😈")
+    return html
 
 
 CODE_FIX = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX", "GS": "GSW", "NY": "NYK", "NO": "NOP", "SA": "SAS", "UTAH": "UTA", "WSH": "WAS"}
@@ -571,47 +569,27 @@ def log_view():
 
 
 @st.fragment(run_every=60)
-def hanging_view():
-    """Left hanging: games where a team sat on 69 and the tie never came."""
-    st.markdown('<div class="small" style="margin:2px 0 8px">🥵 LEFT HANGING · SO CLOSE, NO TIE</div>', unsafe_allow_html=True)
-    full = games_for("all")
-    ed = full[full.result == "edged"] if len(full) else full
-    st.caption("LEFT HANGING: a team reached exactly 69, the other got within 3 points while it sat there, and the tie never happened.")
-    if not len(ed):
-        return st.info("Nobody left hanging yet.")
-    e1, e2 = st.columns(2)
-    e1.metric("Left hanging", f"{len(ed):,}")
-    e2.metric("Within 2 points", f"{int((ed.closest_gap <= 2).sum()):,}")
-    st.markdown('<div class="small" style="margin:6px 0">CLOSEST CALLS</div>', unsafe_allow_html=True)
-    st.markdown(edged_cards_html(ed, 69), unsafe_allow_html=True)
-    pick = st.selectbox("How close", ["Within 3 (all)", "Within 2", "Exactly 1 away"], key="hang_close")
-    st.dataframe(edged_table(ed, 69, {"Within 3 (all)": 3, "Within 2": 2, "Exactly 1 away": 1}[pick]),
-                 hide_index=True, use_container_width=True, column_config={"Story": st.column_config.TextColumn(width="large")})
-
-
-@st.fragment(run_every=60)
 def tease_view():
-    """Team tease board: who finishes and who doesn't."""
-    st.markdown('<div class="small" style="margin:2px 0 8px">😈 TEAM TEASE BOARD · WHO FINISHES, WHO DOESN\'T</div>', unsafe_allow_html=True)
-    full = games_for("all")
-    st.caption("Every team ranked by how often their 69-69 chances actually finish. Left hanging = so close, but no tie.")
-    allt, ranked = tease_board(full, 8)
+    """Leaderboards: who finishes and who just teases."""
+    st.markdown('<div class="small" style="margin:2px 0 8px">😈 THE TEASE BOARD · WHO FINISHES, WHO JUST TEASES</div>', unsafe_allow_html=True)
+    allt, ranked, league = tease_board(games_for("all"), 8)
     if not len(allt):
         return st.info("No teams to rank yet.")
-    st.markdown(tease_cards(ranked), unsafe_allow_html=True)
-    show = allt.drop(columns="code").sort_values(["Finish rate", "Edged"], ascending=[False, True])
-    show["Finish %"] = (show.pop("Finish rate") * 100).round().astype(int)
-    st.dataframe(show, hide_index=True, use_container_width=True,
-                 column_config={"Finish %": st.column_config.ProgressColumn("Finish %", min_value=0, max_value=100, format="%d%%")})
+    st.markdown(
+        '<div class="blurb" style="padding:8px 14px;margin:6px 0 4px"><b>THE RULES</b><br>'
+        '🔥 <b>A chance</b> = one team hits 69 and the other is within 3.<br>'
+        '🎆 <b>Scoregasm</b> = the other team gets there. 69–69.<br>'
+        '😈 <b>Tease</b> = they never do. Left hanging.<br>'
+        '<span class="small">Percent = scoregasms ÷ chances. Needs 8+ chances to make the percent boards. '
+        f'League average: {league * 100:.0f}%.</span></div>', unsafe_allow_html=True)
+    st.markdown(tease_boards(allt, ranked), unsafe_allow_html=True)
 
 
-tab_board, tab_log, tab_hang, tab_tease = st.tabs(["📺 Tonight", "🏆 Hall of Fame", "🥵 Left hanging", "😈 Tease board"])
+tab_board, tab_log, tab_tease = st.tabs(["📺 Tonight", "🏆 Hall of Fame", "😈 Tease board"])
 with tab_board:
     board_view()
 with tab_log:
     log_view()
-with tab_hang:
-    hanging_view()
 with tab_tease:
     tease_view()
 
