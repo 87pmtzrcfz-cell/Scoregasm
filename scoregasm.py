@@ -23,10 +23,19 @@ SEQ = [(.513, []), (.115, [3]), (.003, [3, 4]), (.254, [2]), (.033, [2, 3]), (.0
 SC = SEQ[1:]                          # the scoring outcomes
 SC_TOT = sum(p for p, _ in SC)        # chance a possession scores at all (about 0.49)
 MARGIN_K, MARGIN_CAP = 0.002, 20      # trailing team scores ~0.2% faster per point behind (up to 20)
+SPREAD_SCALE = 1.4                    # fitted on 11,670 games with closing lines (2015-25); see the Stats tab
 
 
-def tie_probability(a, b, minutes_left, pace=PACE, target=69):
-    """Chance the game is exactly target-target at some point before regulation ends (average teams).
+def edge_from_line(line):
+    """Betting line (points the HOME team is favored by) -> how much more often home scores per possession.
+    A team scoring (1+e) as often gains about 2 x e x 110 points a game; the catch-up effect shrinks that,
+    so the fitted scale (1.4) is a bit above the plain math (about 1.2)."""
+    return SPREAD_SCALE * line / (2 * sum(p * c[-1] for p, c in SC) * 100)
+
+
+def tie_probability(a, b, minutes_left, pace=PACE, target=69, line=0.0):
+    """Chance the game is exactly target-target at some point before regulation ends.
+    a = away score, b = home score, line = points the home team is favored by (0 = even matchup).
     The trailing team scores slightly faster and the leader slightly slower, a fix found by
     backtesting on 2,663 real games."""
     if a > target or b > target:
@@ -38,8 +47,9 @@ def tie_probability(a, b, minutes_left, pace=PACE, target=69):
     wa, wb = da + 1, db + 1
     ia, ib = np.meshgrid(np.arange(wa), np.arange(wb), indexing="ij")
     m = np.clip(ib - ia, -MARGIN_CAP, MARGIN_CAP)   # margin (A minus B) at each state = db - da
-    sa = np.clip(1 - MARGIN_K * m, 0.3, 2.0)        # A's scoring rate in each state
-    sb = np.clip(1 + MARGIN_K * m, 0.3, 2.0)
+    e = edge_from_line(line)
+    sa = np.clip((1 - MARGIN_K * m) * (1 - e), 0.3, 2.0)   # away (A) scoring rate in each state
+    sb = np.clip((1 + MARGIN_K * m) * (1 + e), 0.3, 2.0)   # home (B)
     zero = np.zeros((wa, wb)); zero[0, 0] = 1
     ga, gb = zero.copy(), zero.copy()        # ga/gb[x, y]: chance of landing on target when x, y short
     for _ in range(n):                       # build backward from the target, one possession at a time
@@ -65,8 +75,8 @@ def tie_probability(a, b, minutes_left, pace=PACE, target=69):
 
 
 @functools.lru_cache(maxsize=4000)
-def tp(a, b, minutes_left, target):
-    return tie_probability(a, b, minutes_left, PACE, target)
+def tp(a, b, minutes_left, target, line=0.0):
+    return tie_probability(a, b, minutes_left, PACE, target, line)
 
 
 # ================================================================ the scale
@@ -111,6 +121,34 @@ def fmt_pct(p):
 
 
 # ================================================================ live feed
+def read_line(comp, away, home):
+    """Pregame betting line from ESPN's scoreboard odds -> points the HOME team is favored by, or None.
+    Reads the "BOS -5.5" text first (no sign confusion), then the favorite flags. Anything odd -> None (even matchup)."""
+    try:
+        odds = (comp.get("odds") or [{}])[0]
+        det = str(odds.get("details") or "").strip().upper()
+        if det in ("EVEN", "PK", "PICK", "PICK'EM"):
+            return 0.0
+        parts = det.split()
+        if len(parts) == 2 and parts[0] in (away.upper(), home.upper()):
+            pts = abs(float(parts[1]))
+            line = pts if parts[0] == home.upper() else -pts
+        elif odds.get("spread") is not None and (odds.get("homeTeamOdds") or {}).get("favorite") is not None:
+            pts = abs(float(odds["spread"]))
+            line = pts if odds["homeTeamOdds"]["favorite"] else -pts
+        else:
+            return None
+        return line if abs(line) <= 30 else None
+    except (TypeError, ValueError, AttributeError, IndexError):
+        return None
+
+
+@st.cache_resource
+def line_memory():
+    """Lines seen before tip-off, kept while the app is awake (ESPN often drops pregame odds once a game starts)."""
+    return {}
+
+
 @st.cache_data(ttl=10)
 def fetch_feed():
     """One shared ESPN request, kept for 10 seconds no matter how many people are watching."""
@@ -120,10 +158,15 @@ def fetch_feed():
         c, s = e["competitions"][0], e["status"]
         side = {x["homeAway"]: x for x in c["competitors"]}
         away, home = side["away"]["team"]["abbreviation"], side["home"]["team"]["abbreviation"]
+        line = read_line(c, away, home)
+        if line is not None and s["type"]["state"] == "pre":
+            line_memory()[str(e["id"])] = line              # remember the pregame line for later in the game
+        if line is None or s["type"]["state"] != "pre":
+            line = line_memory().get(str(e["id"]), line)    # once live, prefer the pregame line we saw
         games.append({
             "id": str(e["id"]), "label": f'{away} @ {home} ({s["type"]["shortDetail"]})', "away": away, "home": home,
             "state": s["type"]["state"], "detail": s["type"]["shortDetail"], "period": s["period"], "clock": s.get("clock"),
-            "a": int(side["away"].get("score") or 0), "b": int(side["home"].get("score") or 0),
+            "a": int(side["away"].get("score") or 0), "b": int(side["home"].get("score") or 0), "line": line,
         })
     return {"at": time.time(), "games": games}
 
@@ -139,7 +182,8 @@ def game_state(g, target):
         ml = 48.0
     else:
         ml = (4 - max(g["period"], 1)) * 12 + (g["clock"] / 60 if g["clock"] is not None else 12.0)
-    p = tp(a, b, round(ml, 2), target)
+    line = g.get("line")
+    p = tp(a, b, round(ml, 2), target, round(line * 2) / 2 if line is not None else 0.0)
     return {"kind": "live" if g["state"] == "in" else "pre", "p": p, "ml": ml, "score": meter(p, a, b, target),
             "close": closeness(a, b, target)}
 
@@ -382,6 +426,16 @@ def result_card(p, a, b, target):
             f'<div class="small">ROAD TO {target}–{target} · {close * 100:.0f}% THERE · NEEDS {na} AND {nb} MORE</div></div>')
 
 
+def line_label(g):
+    """'BOS -5.5', 'EVEN', or '' when ESPN has no line."""
+    line = g.get("line")
+    if line is None:
+        return ""
+    if abs(line) < 0.25:
+        return "EVEN"
+    return f'{g["home"] if line > 0 else g["away"]} −{abs(line):g}'
+
+
 def tonight_html(games, st_by_id, target):
     order = {"live": 0, "pre": 1, "ot": 2, "final": 3}
     rows = sorted(games, key=lambda g: (order[st_by_id[g["id"]]["kind"]], -st_by_id[g["id"]].get("score", 0)))
@@ -403,7 +457,8 @@ def tonight_html(games, st_by_id, target):
             continue
         label, emoji = tier(s["score"])
         hit = " hit" if g["state"] == "in" and g["a"] == g["b"] == target else ""
-        out.append(f'<div class="grow{hit}"><div class="gtop"><div><div class="gm">{score_line}</div><div class="gs">{g["detail"]}</div></div>'
+        ln = f' · LINE {line_label(g)}' if line_label(g) else ""
+        out.append(f'<div class="grow{hit}"><div class="gtop"><div><div class="gm">{score_line}</div><div class="gs">{g["detail"]}{ln}</div></div>'
                    f'<div class="gr"><div class="gp">{fmt_pct(s["p"])}</div><div class="gc">{emoji} {s["score"]} · {label}</div></div></div>'
                    f'<div class="gbar"><i style="width:{s["close"] * 100:.1f}%"></i></div></div>')
     return "".join(out)
@@ -419,7 +474,8 @@ def intro(title, what, points):
 def board_view():
     intro("📺 TONIGHT", "Every NBA game on tonight, with the odds that it hits <b>exactly 69–69</b> at some point. Updates by itself every few seconds.",
           ["🎆 <b>Chub meter</b> (the big number, 0–100): how worked up the hottest game is. Higher = closer to a 69–69.",
-           "📈 <b>The percent</b>: the actual chance this game passes through 69–69, from the score right now.",
+           "📈 <b>The percent</b>: the actual chance this game passes through 69–69, from the score right now and the betting line "
+           "(lopsided matchups tie less often).",
            "📋 <b>Game list</b>: every game tonight, hottest first. Finished games show 🎆 if they went 69–69."])
     games = get_games_safe()
     if not games:
@@ -644,6 +700,12 @@ def tease_view():
     st.markdown(tease_boards(allt, ranked), unsafe_allow_html=True)
 
 
+AVG_WITH_LINES = 3.21   # backtest: average tip-off odds over 11,670 real matchups with their closing lines (2015-25)
+LINE_CHECK = [           # backtest by size of the spread: (label, actual %, model-with-line %), 11,670 games
+    ("0–2.5", 4.29, 3.54), ("3–5", 3.22, 3.45), ("5.5–7.5", 3.54, 3.27),
+    ("8–10", 2.68, 3.02), ("10.5–13", 2.26, 2.69), ("13.5+", 2.41, 2.20)]
+
+
 def kpi(label, value, sub, good=False):
     return f'<div class="kpi{" good" if good else ""}"><div class="k">{label}</div><div class="v">{value}</div><div class="s">{sub}</div></div>'
 
@@ -659,9 +721,11 @@ def compare_html(title, rows, note):
 @st.fragment(run_every=300)
 def stats_view():
     """How the odds were tested, with the tip-off check recomputed from the data files every time."""
-    model = tp(0, 0, 48.0, target) * 100
+    even = tp(0, 0, 48.0, target) * 100      # an evenly matched game
+    model = AVG_WITH_LINES                   # average over real matchups, using each game's betting line
     full = games_for("all")
     reg = full[full.game_type.fillna("regular") == "regular"] if "game_type" in full else full
+    reg = reg[reg.result != "unchecked"]                       # games whose play-by-play hasn't checked out yet
     intro("📊 THE STATS", "How we know the odds on this site are honest. The model was graded against "
           "<b>every real NBA game we could get play-by-play for</b>, and the toughest test used seasons it had never seen.",
           ["🎯 <b>Predicted</b>: what the model said would happen, before it saw how the games ended.",
@@ -679,7 +743,7 @@ def stats_view():
     st.markdown('<div class="sec">THE HEADLINE CHECK · AT TIP-OFF</div>', unsafe_allow_html=True)
     st.markdown('<div class="kpis">'
                 + kpi("GAMES CHECKED", f"{n:,}", f"Regular season, {reg.season.min()} to {reg.season.max()}")
-                + kpi("MODEL SAYS", f"{model:.1f}%", "Chance a game passes through 69–69, before tip-off")
+                + kpi("MODEL SAYS", f"{model:.1f}%", f"Average at tip-off over real matchups, using each game's betting line (even matchup: {even:.1f}%)")
                 + kpi("REALITY", f"{real:.1f}%", f"{k:,} games actually went 69–69")
                 + kpi("VERDICT", "PASS" if inside else "CLOSE", f"Normal luck range: {lo:.1f}% to {hi:.1f}%"
                       + ("" if inside else ". Reality sits just outside it; see below."), good=inside)
@@ -697,17 +761,33 @@ def stats_view():
                     + '<div class="legend" style="margin-top:8px">One season has about 1,230 games, so a single season can swing by about ±1 point from luck alone.</div>',
                     unsafe_allow_html=True)
 
+    st.markdown('<div class="sec">THE BETTING LINE · WHO\'S FAVORED MATTERS</div>', unsafe_allow_html=True)
+    rows = "".join(f'<div class="srow"><div class="yr">{lab}</div><div class="track"><i style="width:{act / 6 * 100:.1f}%"></i>'
+                   f'<u style="left:{new / 6 * 100:.1f}%"></u></div><div class="val">{act:.1f}% · {new:.1f}%</div></div>'
+                   for lab, act, new in LINE_CHECK)
+    st.markdown(
+        '<div class="prose">Lopsided games tie less often: the favorite pulls away before both teams reach 69. So the model uses each '
+        "game's pregame point spread: the favorite scores a little more often on every possession, sized so the expected final margin "
+        'matches the line. Tested on 11,670 games from 2015–16 to 2024–25 with closing lines. Tuned on half the seasons, graded on the other '
+        'half, both ways round: the spread version beat the old one on the unseen seasons both times, and across all 171,859 live '
+        'forecasts it came out ahead in 99.8% of resamples.</div>'
+        '<div class="legend" style="margin-top:10px"><span style="background:#ff2e97;margin-left:0"></span>actual share that went 69–69'
+        '<span style="background:#19e3d8"></span>model with the line · by size of the spread (points)</div>' + rows
+        + '<div class="legend" style="margin-top:8px">Before, the model said 3.6% for every game. Pick\'em games really hit 4.3%; '
+        '10+ point favorites only about 2.3%.</div>', unsafe_allow_html=True)
+
     st.markdown('<div class="sec">THE LIVE CHECK · DURING GAMES</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="prose">The tip-off number is only one forecast per game. The live odds change with every basket, so they were tested '
-        'by replaying old games moment by moment. At each moment the model only saw the score and the clock, then we checked whether '
-        'that game really went on to hit 69–69.</div>'
-        + compare_html("🔒 Final exam: 2015–18 (seasons the model never saw)", [("Predicted", 2.07, "m"), ("Actual", 2.02, "")],
-                       "1.78 million live forecasts. Off by 0.05 points overall.")
-        + compare_html("When the model said about 3%", [("Predicted", 3.0, "m"), ("Actual", 3.1, "")],
-                       "2018–21 games: 9,272 hits out of 296,350 forecasts.")
-        + compare_html("When the model said about 5%", [("Predicted", 5.0, "m"), ("Actual", 5.3, "")],
-                       "Same games. Forecasts between about 2% and 16% landed close to reality."),
+        'by replaying old games moment by moment: every 2 minutes of game clock, the model saw only the score, the clock and the pregame '
+        'betting line, then we checked whether that game really went on to hit 69–69. 171,859 forecasts from 11,670 games.</div>'
+        + compare_html("🔒 Final exam: 2020–24 (spread strength tuned on 2015–19)", [("Predicted", 3.41, "m"), ("Actual", 3.36, "")],
+                       "83,904 live forecasts from 5,873 games the tuning never saw. The reverse exam (tuned on 2020–24, graded on 2015–19) "
+                       "landed at 3.48% predicted vs 3.60% actual.")
+        + compare_html("When the model said about 3%", [("Predicted", 3.09, "m"), ("Actual", 3.05, "")],
+                       "1,339 hits out of 43,919 forecasts.")
+        + compare_html("When the model said about 5%", [("Predicted", 4.91, "m"), ("Actual", 5.00, "")],
+                       "778 hits out of 15,571 forecasts. Forecasts from 1% to 16% all landed within a few tenths of reality."),
         unsafe_allow_html=True)
 
     st.markdown('<div class="sec">HOW IT WAS TESTED · STEP BY STEP</div>', unsafe_allow_html=True)
@@ -720,7 +800,10 @@ def stats_view():
         'play-by-play records. A script replays each game and notes whether it ever sat at 69–69.</div>'
         '<div class="step"><b>Check the tip-off odds.</b> Compare the model\'s pregame number with how often games really went 69–69 (the headline check above).</div>'
         '<div class="step"><b>Check the live odds on unseen seasons.</b> Replay games moment by moment and compare forecasts with outcomes, '
-        'grouped by forecast size. The final exam used 2015–18, which played no part in building the model.</div>'
+        'grouped by forecast size. Anything tuned on some seasons is graded on others it never saw.</div>'
+        '<div class="step"><b>Add the betting line.</b> Closing spreads for 2015–22 from the SportsbookReview archive and for 2022–25 '
+        'from a public odds database, matched to 98% of games. The spread\'s strength was tuned on 2015–19 and checked on 2020–24, then '
+        'the reverse. It helped both times.</div>'
         '<div class="step"><b>Try to beat it.</b> We tested fancier versions: updating to each season\'s scoring averages, a late-season effect, team '
         'strength, and a pure lookup table built from real games. None did better on unseen seasons, so the simple model stayed.</div>'
         '<div class="step"><b>Write predictions down first.</b> Every new theory gets a written prediction <i>before</i> looking at the data, '
@@ -729,10 +812,10 @@ def stats_view():
 
     st.markdown('<div class="sec">WHAT IT DOESN\'T KNOW</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="prose">The model treats both teams as league average. It ignores team strength, injuries, rest and the betting spread '
-        '(we tested strength and spread-style ratings and found no real gain). Overtime isn\'t modeled, only regulation. '
-        'And recent seasons (2020–25) came in a bit under the model, about 3.1% versus 3.6%. That gap has roughly a 6% chance of being '
-        'pure luck; none of the explanations we tested held up, so it stays an open question.</div>', unsafe_allow_html=True)
+        '<div class="prose">Beyond the betting line, the model knows nothing about the teams: no injuries, rest or lineups (the line '
+        'already prices most of that in). If ESPN has no line for a game, it treats it as an even matchup. Overtime isn\'t modeled, only regulation. '
+        'The old puzzle, real games tying less often than the model said (3.3% vs 3.6%), turned out to be mostly the spread: the old model '
+        'treated every game as even, and lopsided games pull the true average down. With lines it predicts 3.2% on average.</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="sec">ABOUT THE CHUB METER</div>', unsafe_allow_html=True)
     st.markdown(

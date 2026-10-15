@@ -1,13 +1,22 @@
-"""Scoregasm season tracker: reads finished NBA games from ESPN and logs one row per game to scoregasm_season.csv.
+"""Scoregasm season tracker: reads every finished NBA game from ESPN and keeps one row per game in scoregasm_season.csv.
 
 Usage:
-    python3 update_log.py                         # last 3 days (what the daily GitHub job runs)
-    python3 update_log.py --since 2026-10-01      # catch up from a date (use this once at launch)
-    python3 update_log.py --since 2026-10-20 --limit 5   # try a few games first
-Safe to re-run: games already in the file are skipped. Needs: pip3 install requests
+    python3 update_log.py                         # normal nightly run: picks up where the file left off
+    python3 update_log.py --since 2026-10-21      # re-scan from a date (safe: games already logged are skipped)
+    python3 update_log.py --since 2025-10-21 --until 2026-06-30 --out scoregasm_archive.csv   # add a past season to the archive
+Needs: pip3 install requests.  Uses ESPN's public scoreboard and play-by-play API (no key, no login).
 
-Each row says whether the game was a scoregasm (tied exactly 69-69 in regulation), edged (a team sat on 69 while the other
-got within 3 points but the tie never came), or neither, plus the details the Hall of Fame needs."""
+How it makes sure every game gets documented:
+  * It starts from the last date already in the file (minus 2 days), so a missed night, or a week, gets filled next run.
+  * Every finished game gets a row. If ESPN's play-by-play is broken, the game is saved as "unchecked" and retried
+    on every later run until the data checks out.
+  * Each row also stores the game's full scoring path (column "scores"), so any future stat can be worked out
+    from the file alone, without asking ESPN again.
+  * It saves ESPN's betting line too (column "line" = points the home team is favored by, plus "over_under"), when ESPN has one.
+  * Re-running is always safe: the file is rewritten in date order with no duplicates.
+
+result is 'scoregasm' (tied exactly 69-69 in regulation), 'edged' (a team sat on 69 while the other got within 3 but no tie),
+'none', or 'unchecked' (play-by-play not usable yet)."""
 import argparse
 import csv
 import datetime
@@ -25,7 +34,9 @@ PLAYS = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/event
 REG_END = 2880  # seconds in regulation
 COLS = ["game_id", "date", "season", "game_type", "away", "home", "away_final", "home_final", "ot", "result",
         "quarter", "clock", "elapsed_min", "first_to", "tied_by", "play_type", "play_by", "wait_sec", "behind", "tie_sec",
-        "max_deficit", "leader", "other", "leader_quarter", "leader_clock", "closest_gap", "closest_score", "ending", "how"]
+        "max_deficit", "deficit_quarter", "deficit_clock", "leader", "other", "leader_quarter", "leader_clock", "closest_gap", "closest_score", "ending", "how", "line", "over_under", "scores"]
+GAME_TYPE = {2: "regular", 3: "playoff", 5: "play-in"}   # ESPN season types we log (1 = preseason, skipped)
+MAX_LOOKBACK = 45   # days; a bigger gap needs --since, so a summer break doesn't trigger a 4-month scan
 
 
 # ---------------------------------------------------------------- reading a game
@@ -101,6 +112,9 @@ def analyze(rows, teams, target=TARGET):
                    first_to=teams[first], tied_by=teams[e["side"]], play_type=play_type(e["delta"]), play_by=player(e["text"]),
                    wait_sec=max(0, e["t"] - reg[j]["t"]), behind=target - score(reg[j], e["side"]), tie_sec=max(0, nxt - e["t"]),
                    max_deficit=max(0, max(score(x, first) - score(x, e["side"]) for x in reg[: i + 1])))
+        if res["max_deficit"] > 0:                              # when the biggest hole was first reached
+            d = next(x for x in reg[: i + 1] if score(x, first) - score(x, e["side"]) == res["max_deficit"])
+            res.update(deficit_quarter=d["period"], deficit_clock=mmss(d["sec"]))
         tail = "the very next play broke it." if res["tie_sec"] == 0 else f"the score stayed {target}-{target} for {mmss(res['tie_sec'])}."
         when = "right away" if res["wait_sec"] == 0 else f"{mmss(res['wait_sec'])} later"
         res["how"] = (f"{res['tied_by']} trailed {target}-{target - res['behind']} when {res['first_to']} got to {target}. "
@@ -170,62 +184,129 @@ def season_label(day):
     return f"{y}-{str(y + 1)[-2:]}"
 
 
-def process_event(ev, day):
-    """One scoreboard event -> a row dict, or None (unfinished, preseason, or data didn't check out)."""
+def read_odds(comp, away, home):
+    """ESPN scoreboard odds -> (line, over_under). line = points the HOME team is favored by. Blank if ESPN has none.
+    Reads the "BOS -5.5" text first (no sign confusion), then the favorite flags."""
+    line = ou = ""
+    try:
+        odds = (comp.get("odds") or [{}])[0]
+        det = str(odds.get("details") or "").strip().upper()
+        parts = det.split()
+        if det in ("EVEN", "PK", "PICK", "PICK'EM"):
+            line = 0.0
+        elif len(parts) == 2 and parts[0] in (away.upper(), home.upper()):
+            line = abs(float(parts[1])) * (1 if parts[0] == home.upper() else -1)
+        elif odds.get("spread") is not None and (odds.get("homeTeamOdds") or {}).get("favorite") is not None:
+            line = abs(float(odds["spread"])) * (1 if odds["homeTeamOdds"]["favorite"] else -1)
+        if line != "" and abs(line) > 30:
+            line = ""
+        if odds.get("overUnder") is not None and 150 < float(odds["overUnder"]) < 300:
+            ou = float(odds["overUnder"])
+    except (TypeError, ValueError, AttributeError, IndexError):
+        pass
+    return line, ou
+
+
+def score_path(rows):
+    """Every scoring change as 'period,seconds_left,away,home' joined by ';'. About 1 KB per game."""
+    return ";".join(f"{e['period']},{e['sec']},{e['a']},{e['h']}" for e in events(rows))
+
+
+def process_event(ev, day, today):
+    """One scoreboard event -> a row dict, or None (not finished yet, preseason, or postponed).
+    If play-by-play doesn't check out, returns an 'unchecked' row once the game is 2+ days old (retried on later runs)."""
     comp = ev["competitions"][0]
-    if (ev.get("status") or comp.get("status") or {}).get("type", {}).get("state") != "post":
+    status = (ev.get("status") or comp.get("status") or {}).get("type", {})
+    if status.get("state") != "post" or status.get("completed") is False:
         return None
     kind = (ev.get("season") or {}).get("type")
-    if kind not in (2, 3):                                      # skip preseason and anything odd
+    if kind not in GAME_TYPE:
         return None
     side = {c["homeAway"]: c for c in comp["competitors"]}
     teams = {k: side[k]["team"]["abbreviation"] for k in ("away", "home")}
     finals = {k: int(side[k].get("score") or 0) for k in ("away", "home")}
+    base = {"game_id": str(ev["id"]), "date": day.isoformat(), "season": season_label(day), "game_type": GAME_TYPE[kind],
+            "away": teams["away"], "home": teams["home"], "away_final": finals["away"], "home_final": finals["home"]}
+    base["line"], base["over_under"] = read_odds(comp, teams["away"], teams["home"])
     rows = rows_from_espn(fetch_plays(ev["id"]))
     if len(rows) < 100 or (rows[-1]["a"], rows[-1]["h"]) != (finals["away"], finals["home"]):
-        print(f"  skipped {teams['away']}@{teams['home']} {ev['id']}: play-by-play incomplete or doesn't match the final score (will retry)")
-        return None
-    base = {"game_id": str(ev["id"]), "date": day.isoformat(), "season": season_label(day), "game_type": "regular" if kind == 2 else "playoff",
-            "away": teams["away"], "home": teams["home"], "away_final": finals["away"], "home_final": finals["home"]}
-    return {**base, **analyze(rows, teams)}
+        print(f"  {teams['away']}@{teams['home']} {ev['id']}: play-by-play incomplete or doesn't match the final score")
+        return {**base, "result": "unchecked"} if (today - day).days >= 2 else None
+    return {**base, **analyze(rows, teams), "scores": score_path(rows)}
+
+
+def load(path):
+    """Existing file -> (header, {game_id: row})."""
+    if not os.path.exists(path):
+        return list(COLS), {}
+    with open(path, newline="") as f:
+        r = csv.DictReader(f)
+        return list(r.fieldnames or COLS), {row["game_id"]: row for row in r}
+
+
+def save(path, header, games):
+    """Rewrite the whole file in date order (written to a temp file first, so a crash can't leave half a file)."""
+    cols = header + [c for c in COLS if c not in header]
+    tmp = path + ".tmp"
+    with open(tmp, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore", restval="")
+        w.writeheader()
+        for row in sorted(games.values(), key=lambda r: (str(r.get("season") or ""), str(r.get("date") or ""), str(r["game_id"]))):
+            w.writerow({k: ("" if v is None else v) for k, v in row.items()})
+    os.replace(tmp, path)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--since", help="first date to check, YYYY-MM-DD (default: 3 days ago)")
+    ap.add_argument("--since", help="first date to check, YYYY-MM-DD (default: last date in the file minus 2 days)")
     ap.add_argument("--until", help="last date to check (default: today)")
     ap.add_argument("--limit", type=int, help="stop after logging this many new games")
-    ap.add_argument("--out", default=OUT)
+    ap.add_argument("--out", default=OUT, help="file to update (default: scoregasm_season.csv)")
     a = ap.parse_args()
     today = datetime.datetime.now(datetime.timezone.utc).date()
-    day = datetime.date.fromisoformat(a.since) if a.since else today - datetime.timedelta(days=3)
+    header, games = load(a.out)
     end = datetime.date.fromisoformat(a.until) if a.until else today
-    done = set()
-    if os.path.exists(a.out):
-        with open(a.out, newline="") as f:
-            done = {r["game_id"] for r in csv.DictReader(f)}
-    new_file, added = not os.path.exists(a.out), 0
-    with open(a.out, "a", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=COLS, extrasaction="ignore", restval="")
-        if new_file:
-            w.writeheader()
-        while day <= end:
+    if a.since:
+        start = datetime.date.fromisoformat(a.since)
+    else:
+        dates = [datetime.date.fromisoformat(r["date"]) for r in games.values() if r.get("date")]
+        start = min(max(dates) - datetime.timedelta(days=2), today - datetime.timedelta(days=3)) if dates else today - datetime.timedelta(days=3)
+        if start < today - datetime.timedelta(days=MAX_LOOKBACK):
+            start = today - datetime.timedelta(days=MAX_LOOKBACK)
+            print(f"note: last logged game is {max(dates)}; only checking the last {MAX_LOOKBACK} days. Use --since to go further back.")
+    days = {start + datetime.timedelta(days=k) for k in range((end - start).days + 1)}
+    days |= {datetime.date.fromisoformat(r["date"]) for r in games.values() if r.get("result") == "unchecked" and r.get("date")}
+    done = {g for g, r in games.items() if r.get("result") != "unchecked"}
+    added = fixed = 0
+    try:
+        for day in sorted(days):
             board = get_json(BOARD.format(day.strftime("%Y%m%d")))
             if board is None:
-                print(day, "scoreboard unavailable, skipping")
-            for ev in (board or {}).get("events", []):
+                print(day, "scoreboard unavailable, will try again next run")
+                continue
+            for ev in board.get("events", []):
                 if str(ev["id"]) in done:
                     continue
-                row = process_event(ev, day)
+                row = process_event(ev, day, today)
                 if row is None:
                     continue
-                w.writerow(row); f.flush(); done.add(row["game_id"]); added += 1
-                print(day, row["away"], "@", row["home"], {"scoregasm": "🎆 SCOREGASM", "edged": "edged"}.get(row["result"], ""))
+                was_unchecked = row["game_id"] in games
+                games[row["game_id"]] = row
+                if row["result"] != "unchecked":
+                    done.add(row["game_id"])
+                    fixed += was_unchecked
+                added += not was_unchecked
+                print(day, row["away"], "@", row["home"], {"scoregasm": "🎆 SCOREGASM", "edged": "edged", "unchecked": "(unchecked)"}.get(row["result"], ""))
+                if (added + fixed) % 25 == 0:
+                    save(a.out, header, games)            # save as we go on long catch-ups
                 if a.limit and added >= a.limit:
-                    print("limit reached:", added, "games ->", a.out); return
+                    raise StopIteration
                 time.sleep(0.3)
-            day += datetime.timedelta(days=1)
-    print(f"done: {added} new games -> {a.out}")
+    except StopIteration:
+        print("limit reached")
+    save(a.out, header, games)
+    left = sum(r.get("result") == "unchecked" for r in games.values())
+    print(f"done: {added} new games, {fixed} fixed, {left} still unchecked, {len(games)} total -> {a.out}")
 
 
 if __name__ == "__main__":
