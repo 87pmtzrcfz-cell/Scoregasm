@@ -1,11 +1,11 @@
 """Build the all-time Scoregasm archive (scoregasm_archive.csv) from free NBA play-by-play files.
 
 Source: https://github.com/shufinskiy/nba_data  (stats.nba.com play-by-play, one file per season, 1996-97 on).
-Run this ONCE on your own computer (it downloads about 1 GB over a few minutes; safe to stop and re-run, it resumes):
+Lives in research/. Run it from the project folder. Run this ONCE on your own computer (it downloads about 1 GB over a few minutes; safe to stop and re-run, it resumes):
 
     pip3 install pandas requests
-    python3 build_archive.py                      # every season the dataset has (1996-97 to 2024-25)
-    python3 build_archive.py --seasons 2016-2024  # only some seasons (the number is the year the season STARTS)
+    python3 research/build_archive.py                      # every season the dataset has (1996-97 to 2024-25)
+    python3 research/build_archive.py --seasons 2016-2024  # only some seasons (the number is the year the season STARTS)
 
 For 2025-26 (not in that dataset) use ESPN instead, writing into the same file:
     python3 update_log.py --since 2025-10-21 --until 2026-06-30 --out scoregasm_archive.csv
@@ -21,9 +21,11 @@ import tarfile
 import pandas as pd
 import requests
 
+HERE = os.path.dirname(os.path.abspath(__file__))     # research/
+ROOT = os.path.dirname(HERE)                          # the project folder
+import sys
+sys.path.insert(0, ROOT)
 import update_log as U
-
-HERE = os.path.dirname(os.path.abspath(__file__))
 URL = "https://github.com/shufinskiy/nba_data/raw/main/datasets/{}_{}.tar.xz"
 WANT = {"GAME_ID", "EVENTNUM", "PERIOD", "PCTIMESTRING", "HOMEDESCRIPTION", "VISITORDESCRIPTION", "SCORE",
         "PLAYER1_NAME", "PLAYER1_TEAM_ABBREVIATION"}
@@ -107,8 +109,8 @@ def game_rows(g):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seasons", default="1996-2024", help="first-last START year, e.g. 2016-2024")
-    ap.add_argument("--out", default=os.path.join(HERE, "scoregasm_archive.csv"))
-    ap.add_argument("--folder", default=os.path.join(HERE, "archive_downloads"), help="where downloaded files are kept")
+    ap.add_argument("--out", default=os.path.join(ROOT, "scoregasm_archive.csv"))
+    ap.add_argument("--folder", default=os.path.join(HERE, "downloads"), help="where downloaded files are kept")
     a = ap.parse_args()
     lo, hi = (int(x) for x in a.seasons.split("-"))
     os.makedirs(a.folder, exist_ok=True)
